@@ -20,13 +20,17 @@ session.
 
 ### Project Baseline
 
-- [ ] Add a minimal Bun and TypeScript project scaffold.
+- [x] Add a minimal Bun and TypeScript project scaffold.
   - Define canonical package commands for development, formatting or checking,
     type checking, testing, and building.
   - Pin the Bun version and dependency versions.
   - Add only dependencies justified by immediate MVP functionality.
   - Verify a trivial build and `bun test` run locally.
-- [ ] Add a versioned example configuration and a local ignored configuration
+  - Done: `package.json` defines `dev`, `format`, `check`, `typecheck`, `test`,
+    and `build`. Pinned devDependencies: `typescript@7.0.2`,
+    `@types/bun@1.4.2`, `prettier@3.9.7`. No runtime dependencies. `engines.bun`
+    pins `>=1.3.13`. `bun run build`, `bun test`, and `tsc --noEmit` all pass.
+- [x] Add a versioned example configuration and a local ignored configuration
   path.
   - Initially include Paperless URL, LLM base URL and model, state tags,
     dry-run, overwrite flags, request timeout, and text limits.
@@ -34,16 +38,25 @@ session.
     M3; use the conservative defaults in `PLAN.md` until then.
   - Keep `PAPERLESS_API_TOKEN` and `LLM_API_KEY` in environment variables.
   - Add or confirm ignore rules for secrets and local configuration.
-- [ ] Implement startup configuration parsing and validation.
+  - Done: `config.example.json` is versioned; `config.json` is the local,
+    git-ignored default (`CONFIG_PATH` overrides it). `.gitignore` ignores
+    `config.json`, `config.*.local.json`, and `.env*` (except `.env.example`).
+- [x] Implement startup configuration parsing and validation.
   - Reject unsupported configuration versions and invalid values.
   - Apply documented defaults.
   - Produce actionable errors without printing secrets.
   - Add focused configuration tests.
+  - Done: `src/config.ts` (`parseConfig`, `loadConfig`) validates version,
+    URLs, distinct state tags, and numeric bounds; `maxTitleLength` is capped at
+    Paperless' 128. Covered by `tests/config.test.ts`.
 
 ### Paperless API Investigation
 
-- [ ] Record the exact Paperless-ngx v3 beta build used for initial testing.
-- [ ] Confirm authentication and the API operations required for the vertical
+- [x] Record the exact Paperless-ngx v3 beta build used for initial testing.
+  - Done: `pngx_version` 3.0.0 (docker, sqlite), OpenAPI `info.version`
+    6.0.0 (10), latest migration `documents.0022_add_perf_indexes`.
+    See `docs/api-notes.md`.
+- [x] Confirm authentication and the API operations required for the vertical
   slice against the installed instance or its matching API schema.
   - List and paginate tags.
   - List and paginate correspondents.
@@ -52,117 +65,179 @@ session.
   - Fetch one document's metadata and OCR content.
   - Update document metadata and tags.
   - Determine whether metadata and state tags can be updated together.
-- [ ] Capture minimal sanitized response fixtures for the confirmed endpoints.
+  - Done: `Authorization: Token` header; pagination via `next`; document
+    filtering via `tags__id__all`/`tags__id__none` and `fields`; OCR in
+    `content`; `PATCH` accepts metadata and `tags` in one request. Recorded in
+    `docs/api-notes.md`.
+- [x] Capture minimal sanitized response fixtures for the confirmed endpoints.
   - Remove OCR content, tokens, hostnames, and personal data.
   - Keep only fields the application consumes plus representative pagination.
+  - Done: `fixtures/paperless/*.json` with fictional names, `paperless.invalid`
+    hosts, and OCR replaced by a placeholder. See `fixtures/README.md`.
 
 ### LLM API Investigation
 
-- [ ] Select the first [OI]-compatible provider and model used for real testing.
-- [ ] Confirm the smallest supported request format and structured-output mode.
+- [x] Select the first [OI]-compatible provider and model used for real testing.
+  - Done: `deepseek-v4.1-flash` at the configured OpenAI-compatible base URL.
+- [x] Confirm the smallest supported request format and structured-output mode.
   - Record the endpoint path and required headers.
   - Confirm timeout and error response behavior relevant to retries.
   - Do not add provider-specific options unless needed for the selected service.
-- [ ] Define and version the initial prompt and response contract.
+  - Done: `POST /chat/completions`, `Authorization: Bearer`, strict
+    `json_schema` `response_format`. Errors use the OpenAI shape; rate-limit
+    headers present. See `docs/api-notes.md`.
+- [x] Define and version the initial prompt and response contract.
   - Require title, tags to add, optional correspondent, optional document type,
     review decision, and review reasons.
   - Decide whether allowed choices include names only or names and IDs based on
     the first trial.
   - Keep numeric confidence out unless testing shows a concrete need.
-- [ ] Add sanitized valid and invalid LLM response fixtures.
+  - Done: `proposal-v1` in `src/prompt.ts` and `src/llm.ts`; names only; local
+    validation via `parseProposal`.
+- [x] Add sanitized valid and invalid LLM response fixtures.
+  - Done: `fixtures/llm/proposal-valid.json` and
+    `fixtures/llm/proposal-invalid.json`.
 
 ### M0 Verification
 
-- [ ] Run the canonical checks and tests.
-- [ ] Verify no secret, real OCR text, or personal document data is tracked.
-- [ ] Update `PLAN.md` if API findings invalidate any assumption.
-- [ ] Confirm readiness for M1: no required endpoint or response shape remains
+- [x] Run the canonical checks and tests.
+  - Done: `bun run check` (prettier + `tsc --noEmit`), `bun test` (57 tests),
+    `bun run build`.
+- [x] Verify no secret, real OCR text, or personal document data is tracked.
+  - Done: fixtures use fictional data and placeholders; `config.json` and
+    `.envrc.local` are git-ignored.
+- [x] Update `PLAN.md` if API findings invalidate any assumption.
+  - Done: title limit corrected from 200 to 128 and Open Decisions updated with
+    M0 findings.
+- [x] Confirm readiness for M1: no required endpoint or response shape remains
   guessed.
+  - Done: endpoints, auth, pagination, filters, OCR field, update method, and
+    the `proposal-v1` contract are recorded in `docs/api-notes.md`.
 
 ## M1: Local Read-Only Vertical Slice
 
 ### Minimal Clients
 
-- [ ] Implement direct Paperless HTTP functions for only the confirmed M1 API
+- [x] Implement direct Paperless HTTP functions for only the confirmed M1 API
   operations.
   - Use the configured token without logging it.
   - Enforce request timeouts.
   - Handle pagination for metadata vocabularies and document selection.
   - Parse untrusted responses at the boundary.
   - Avoid a generic SDK or class hierarchy.
-- [ ] Implement the direct [OI]-compatible request function.
+  - Done: `src/paperless.ts` with `listTags`, `listCorrespondents`,
+    `listDocumentTypes`, `listPendingDocuments`, `getDocument`, `getStatus`.
+    `src/http.ts` enforces a hard whole-request timeout and transient-only
+    retries.
+- [x] Implement the direct [OI]-compatible request function.
   - Send bounded OCR content and allowed metadata choices.
   - Include a prompt version in logs.
   - Parse and validate the structured response locally.
   - Avoid logging prompts, OCR, keys, or raw sensitive responses.
+  - Done: `src/llm.ts` (`callModel`, `parseProposal`) and `src/prompt.ts`
+    (`PROMPT_VERSION = "proposal-v1"`). Errors and logs never include prompts,
+    OCR, keys, or raw payloads.
 
 ### First Happy Path
 
-- [ ] Connect the two clients in a one-document dry-run as soon as their basic
+- [x] Connect the two clients in a one-document dry-run as soon as their basic
   response boundaries work.
   - Fetch one pending document, its OCR, and the available metadata.
   - Call the model and log the parsed proposal.
   - Make zero Paperless mutation requests.
   - Use this early run to expose incorrect API assumptions before completing
     all edge-case rules below.
+  - Done: `bun run src/index.ts --document-id 34` produced a proposal against
+    the real services; `tests/dryrun.test.ts` proves only Paperless `GET`
+    requests are sent.
 
 ### Pure Decision Logic
 
-- [ ] Implement OCR preparation.
+- [x] Implement OCR preparation.
   - Reject empty or unusable text.
   - Apply the configured length limit deterministically.
   - Preserve content from the beginning and end when truncating.
   - Report truncation as metadata for logging.
-- [ ] Implement title normalization and validation.
+  - Done: `prepareOcr` in `src/text.ts`; tested in `tests/text.test.ts`.
+- [x] Implement title normalization and validation.
   - Normalize whitespace.
   - Reject empty values, control characters, and overlong titles.
-- [ ] Implement metadata vocabulary normalization and resolution.
+  - Done: `validateTitle` in `src/text.ts`.
+- [x] Implement metadata vocabulary normalization and resolution.
   - Trim, Unicode-normalize, and compare names case-insensitively.
   - Reject unknown and ambiguous matches.
   - Exclude configured worker-state tags from selectable document tags.
-- [ ] Implement the proposed-change decision.
+  - Done: `src/metadata.ts` (`normalizeName`, `resolveName`,
+    `resolveStateTags`, `excludeStateTags`); tested in `tests/metadata.test.ts`.
+- [x] Implement the proposed-change decision.
   - Preserve existing document tags.
   - Treat duplicate tag suggestions as no-ops.
   - Populate empty title, correspondent, and document type values.
   - Respect overwrite flags for non-empty values.
   - Convert unsafe, unresolved, or highly uncertain outcomes to review.
   - Return explicit proposed changes and reasons without performing I/O.
-- [ ] Add focused `bun test` coverage for mutation safety, matching ambiguity,
+  - Done: `decideChanges` in `src/decision.ts`; never removes tags and never
+    selects state tags. Tested in `tests/decision.test.ts`.
+- [x] Add focused `bun test` coverage for mutation safety, matching ambiguity,
   metadata protection, and response validation; add further cases when a
   concrete failure risk justifies them.
+  - Done: 57 tests across 8 files, including `tests/dryrun.test.ts`.
 
 ### Dry-Run Orchestration
 
-- [ ] Implement selection of one eligible document.
+- [x] Implement selection of one eligible document.
   - Require pending and reject documents containing another worker-state tag.
   - Log conflicting state tags without repairing them.
-- [ ] Implement processing of one document in dry-run mode.
+  - Done: `checkEligibility` in `src/paperless.ts`; conflicting candidates are
+    logged and skipped. An optional `--document-id` targets a deliberately
+    selected document for a dry run.
+- [x] Implement processing of one document in dry-run mode.
   - Fetch OCR and current metadata.
   - Call the LLM.
   - Validate and resolve its response.
   - Log the proposed outcome and duration.
   - Make zero Paperless mutation requests.
-- [ ] Implement startup behavior for Paperless connectivity.
+  - Done: `src/process.ts`; the module contains no write functions.
+- [x] Implement startup behavior for Paperless connectivity.
   - Fail immediately for invalid local configuration.
   - Keep the process running and retry when Paperless is unavailable.
   - Once connected, validate that all configured state tags exist uniquely.
   - Keep the process alive but block document processing while state tags are
     missing or ambiguous; periodically revalidate and rate-limit the actionable
     error log.
-- [ ] Add a minimal local command that runs the dry-run worker without Docker.
+  - Done: `resolveStateTagsWithRetry` in `src/index.ts`.
+- [x] Add a minimal local command that runs the dry-run worker without Docker.
+  - Done: `bun run src/index.ts` (or `bun run dev`).
 
 ### M1 Real-Service Checkpoint
 
-- [ ] Prepare at least one deliberately selected Paperless test document with
+- [x] Prepare at least one deliberately selected Paperless test document with
   only the pending state tag.
-- [ ] Run the worker locally against the real Paperless and LLM APIs in dry-run
+  - Done: document 34 (`DocScanner Sep 3, 2026 15-38`) carries only
+    `ai-pending`. Note: document 10 also carries `ai-pending`; the user chose to
+    process only document 34 in the real dry run.
+- [x] Run the worker locally against the real Paperless and LLM APIs in dry-run
   mode.
-- [ ] Confirm from Paperless that no metadata or tags changed.
-- [ ] Review the proposed title and metadata for usefulness.
-- [ ] Record observed API, prompt, OCR, and logging issues without prematurely
+  - Done: `bun run src/index.ts --document-id 34` (twice).
+- [x] Confirm from Paperless that no metadata or tags changed.
+  - Done: `modified` timestamps, titles, tags, correspondent, document type,
+    and the pending document list are byte-identical before/after both runs.
+    A test also asserts only Paperless `GET` requests are issued.
+- [x] Review the proposed title and metadata for usefulness.
+  - Done: across runs the model proposed titles "Passaporte do Brasil" /
+    "Passaporte Brasileiro" and either document type "Official Document" or an
+    explicit review. The title was preserved because overwrite is disabled. See
+    the M1 checkpoint summary.
+- [x] Record observed API, prompt, OCR, and logging issues without prematurely
   generalizing the implementation.
-- [ ] Adjust the response contract, prompt, limits, and matching rules only as
+  - Done: the model returned no tags in every run and flipped between an
+    "Official Document" proposal and `review: true` for the same document;
+    provider latency varied 5-66s while the hard 30s timeout held; Paperless'
+    real `title` limit is 128.
+- [x] Adjust the response contract, prompt, limits, and matching rules only as
   justified by the trial.
+  - Done: title limit set to 128; hard whole-request timeout added; retry
+    logging added; optional `--document-id` added for a deliberate test target.
 - [ ] Confirm readiness for M2 with the user before enabling writes.
 
 ## M2: Safe Local Write Path

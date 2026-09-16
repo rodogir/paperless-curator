@@ -1,0 +1,23 @@
+{
+  "count": 2,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 123,
+      "correspondent": null,
+      "document_type": null,
+      "title": "Scanned Document 2026-01-01",
+      "tags": [70],
+      "created": "2026-01-01"
+    },
+    {
+      "id": 124,
+      "correspondent": 5,
+      "document_type": 18,
+      "title": "Example Statement",
+      "tags": [27, 70],
+      "created": "2025-12-15"
+    }
+  ]
+}

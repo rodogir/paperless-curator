@@ -122,7 +122,9 @@ Conservative initial defaults:
 
 - Dry-run enabled
 - All metadata overwrite options disabled
-- Maximum generated title length: 200 characters
+- Maximum generated title length: 128 characters. Paperless-ngx v3 declares
+  `title` `max_length: 128`, so a longer generated title would be rejected. This
+  replaces the earlier 200-character default.
 - Maximum OCR input: 30,000 characters
 - Poll interval: 60 seconds
 - Metadata refresh interval: 15 minutes
@@ -366,14 +368,22 @@ without depending on the local development environment.
 These should be answered through API investigation or the first real trial,
 not speculative design:
 
-- Exact Paperless-ngx v3 beta build and API response shapes
-- Selected [OI]-compatible provider, model, and supported structured-output
-  mode
-- Exact OCR retrieval field or endpoint
-- Whether one Paperless update can atomically apply metadata and state tags
+- ~~Exact Paperless-ngx v3 beta build and API response shapes~~ Resolved in M0:
+  Paperless-ngx 3.0.0 (OpenAPI 6.0.0), recorded in `docs/api-notes.md`.
+- ~~Selected [OI]-compatible provider, model, and supported structured-output
+  mode~~ Resolved in M0: `deepseek-v4.1-flash`; `json_schema` strict is
+  supported. See `docs/api-notes.md`.
+- ~~Exact OCR retrieval field or endpoint~~ Resolved in M0: `content` on
+  `GET /api/documents/{id}/`.
+- ~~Whether one Paperless update can atomically apply metadata and state tags~~
+  Resolved in M0: `PATCH /api/documents/{id}/` accepts `title`, `correspondent`,
+  `document_type`, and `tags` together.
 - Which Paperless timestamp, if any, is reliable for stale-processing recovery
-- Final timeout, retry, polling, vocabulary refresh, and OCR limit defaults
-- Whether the model performs better with metadata names, IDs, or both
+- Final timeout, retry, polling, vocabulary refresh, and OCR limit defaults.
+  M0 finding: `AbortSignal.timeout` alone did not reliably bound the whole
+  request, so the client enforces a hard whole-operation timeout.
+- Whether the model performs better with metadata names, IDs, or both. M1 trial
+  used names only.
 
 Any discovery that changes a safety invariant requires updating this plan
 before implementation proceeds.

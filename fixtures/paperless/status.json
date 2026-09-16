@@ -1,0 +1,24 @@
+{
+  "pngx_version": "3.0.0",
+  "server_os": "Linux-x86_64",
+  "install_type": "docker",
+  "storage": { "total": 0, "available": 0 },
+  "database": {
+    "type": "sqlite",
+    "url": null,
+    "status": "OK",
+    "error": null,
+    "migration_status": {
+      "latest_migration": "documents.0022_add_perf_indexes",
+      "unapplied_migrations": []
+    }
+  },
+  "tasks": {
+    "redis_url": null,
+    "redis_status": "OK",
+    "redis_error": null,
+    "celery_status": "OK",
+    "celery_url": null,
+    "celery_error": null
+  }
+}

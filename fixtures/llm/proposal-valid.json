@@ -1,0 +1,20 @@
+{
+  "id": "chatcmpl-example",
+  "object": "chat.completion",
+  "model": "example-model",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"title\":\"Example Statement January 2026\",\"tags\":[\"Example Tag\"],\"correspondent\":\"Example Correspondent\",\"document_type\":\"Example Type\",\"review\":false,\"review_reasons\":[]}"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 100,
+    "completion_tokens": 20,
+    "total_tokens": 120
+  }
+}
