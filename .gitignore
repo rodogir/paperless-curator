@@ -1,0 +1,4 @@
+.devenv/
+.direnv/
+.envrc.local
+devenv.local.nix
