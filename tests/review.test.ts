@@ -97,6 +97,7 @@ describe("buildReviewRecord", () => {
       ]),
       correspondentNames: new Map([[3, "Example Correspondent"]]),
       documentTypeNames: new Map([[18, "Example Type"]]),
+      stateTagIds: [70],
       now,
     });
     expect(built.documentId).toBe(34);
@@ -104,7 +105,7 @@ describe("buildReviewRecord", () => {
       title: "DocScanner Sep 3",
       correspondent: "Example Correspondent",
       documentType: null,
-      tags: ["ai-pending", "Invoice"],
+      tags: ["Invoice"],
     });
     expect(built.proposal?.title).toBe("Passaporte do Brasil");
     expect(built.missing).toEqual([

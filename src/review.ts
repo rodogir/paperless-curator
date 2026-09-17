@@ -182,6 +182,7 @@ export type BuildReviewRecordArgs = {
   tagNames: Map<number, string>;
   correspondentNames: Map<number, string>;
   documentTypeNames: Map<number, string>;
+  stateTagIds?: readonly number[];
   now: string;
   existing?: ReviewRecord;
 };
@@ -203,7 +204,9 @@ export function buildReviewRecord(args: BuildReviewRecordArgs): ReviewRecord {
     existing,
   } = args;
 
+  const stateTags = new Set(args.stateTagIds ?? []);
   const currentTags = document.tags
+    .filter((id) => !stateTags.has(id))
     .map((id) => tagNames.get(id))
     .filter((name): name is string => name !== undefined);
 

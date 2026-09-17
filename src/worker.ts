@@ -7,7 +7,7 @@ import {
 } from "./decision.ts";
 import type { LlmContext, Proposal } from "./llm.ts";
 import type { Logger } from "./logger.ts";
-import type { StateTagIds } from "./metadata.ts";
+import { allStateTagIds, type StateTagIds } from "./metadata.ts";
 import {
   type DocumentDetail,
   getDocument,
@@ -182,6 +182,7 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
       decision,
       status,
       ...maps,
+      stateTagIds: allStateTagIds(deps.stateTagIds),
       now: nowIsoOf(now),
       existing,
     });
@@ -238,6 +239,10 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
         message: errorMessage(error),
       });
     }
+  }
+
+  if (requeues.some((entry) => entry.action === "requeued")) {
+    await deps.artifacts.saveMarkdown(renderReviewMarkdown(store));
   }
 
   const processDeps: ProcessDeps = {
