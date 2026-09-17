@@ -240,7 +240,76 @@ session.
     logging added; optional `--document-id` added for a deliberate test target.
 - [ ] Confirm readiness for M2 with the user before enabling writes.
 
-## M2: Safe Local Write Path
+## M2: Safe Local Write Path And Review Loop
+
+### Metadata Whitelist
+
+- [ ] Add a versioned `whitelist.example.json` and git-ignore the real
+  `whitelist.json` in the mounted data directory.
+  - Sections for tags, correspondents, and document types.
+  - Each entry has a required `name` and optional `aliases` and `description`.
+- [ ] Implement whitelist loading and validation.
+  - Reject unsupported versions, empty names, and normalized duplicates within
+    each namespace.
+  - Reject aliases that collide with another entry's name or alias in the same
+    namespace.
+  - Reject state tag names and produce actionable errors without secrets.
+  - Add focused tests.
+- [ ] Offer whitelist canonical names and descriptions to the model, and resolve
+  model output against canonical names and aliases.
+
+### Whitelist Reconciliation
+
+- [ ] Confirm the Paperless entity-creation endpoints
+  (`POST /api/tags/`, `/api/correspondents/`, `/api/document_types/`) and their
+  duplicate-name behavior against the real instance; record sanitized findings
+  in `docs/api-notes.md` before relying on them.
+- [ ] Reconcile the whitelist against Paperless on each cycle.
+  - Look up each entry by normalized name.
+  - In live mode, create missing tags, correspondents, and document types.
+  - Make creation idempotent by re-checking before creating.
+  - In dry-run mode, report would-create and create nothing.
+  - Log each creation by kind and name; a failed creation must not block others.
+- [ ] Add tests proving reconciliation is idempotent, never creates
+  non-whitelisted entities, and creates nothing in dry-run.
+
+### Contract v2 And Prompt
+
+- [ ] Upgrade the response contract to `proposal-v2`.
+  - Keep `title`, `tags`, `correspondent`, `document_type`, `review`, and
+    `review_reasons`.
+  - Add `suggested_tags`, `suggested_correspondent`, and
+    `suggested_document_type`, each with `name` and `reason`.
+  - Update the strict `json_schema` and `parseProposal` validation.
+- [ ] Update the prompt to explain the whitelist and that suggestions are
+  recorded for review and never applied.
+- [ ] Update fixtures for valid and invalid `proposal-v2` responses and add
+  tests.
+
+### Review Artifact
+
+- [ ] Implement a `review.json` store keyed by document id.
+  - Record status, `requeueable`, attempts, current metadata, proposal, review
+    reasons, and `missing` entities with reasons.
+  - Upsert records idempotently and never store OCR text.
+- [ ] Render `review.md` with per-document reasons and aggregated suggestions
+  (name, kind, count, document ids, reason).
+- [ ] Append sanitized decisions to `review-log.jsonl`.
+- [ ] Keep the data directory git-ignored and add tests for upsert, merge, and
+  rendering.
+
+### Automatic Requeue
+
+- [ ] Implement pure requeue decisions.
+  - Requeue only `status: review` documents whose `requeueable` flag is true.
+  - Requeue only when every `missing` entity now resolves to a Paperless entity.
+  - Never requeue model uncertainty, ambiguity, invalid output, or unusable OCR.
+  - Rate-limit repeated requeues to avoid loops.
+- [ ] In live mode, transition requeued documents from `ai-review` to
+  `ai-pending` while preserving all non-state tags.
+- [ ] In dry-run mode, report would-requeue and change nothing.
+- [ ] Add tests for requeueable classification, filled and unfilled gaps, and
+  idempotent requeue.
 
 ### State And Update Decisions
 
@@ -261,9 +330,10 @@ session.
 
 - [ ] Add an explicit live-mode guard so writes cannot occur accidentally while
   dry-run is enabled.
-- [ ] Implement the ordered live flow: select, claim, fetch authoritative OCR
-  and metadata, invoke the model, resolve the decision, re-fetch, recompute the
-  safe update, apply metadata, and apply the terminal state.
+- [ ] Implement the ordered live flow: reconcile the whitelist, select, claim,
+  fetch authoritative OCR and metadata, invoke the model, resolve the decision,
+  re-fetch, recompute the safe update, apply metadata, and apply the terminal
+  state.
   - A failed claim makes no model request and leaves recovery to the next poll.
   - Preserve newly observed user tags and recompute overwrite/no-op decisions.
   - Route to review only when a newly populated protected field conflicts with
@@ -277,24 +347,25 @@ session.
   - Re-fetch before retrying a write.
   - Avoid repeating already-applied changes.
 - [ ] Route unusable OCR, invalid model output, unknown or ambiguous metadata,
-  and high uncertainty to review.
+  and high uncertainty to review, recording the review artifact.
 - [ ] Retry transient per-document failures with bounded backoff and transition
   to failed after exhaustion.
 - [ ] Add mocked HTTP tests proving dry-run sends no mutation requests and live
-  mode sends only the expected updates.
+  mode sends only the expected updates, entity creations, and requeues.
 
 ### M2 Real-Service Checkpoint
 
 - [ ] Use disposable or deliberately selected documents to exercise a
   successful processed outcome.
-- [ ] Exercise a review outcome, especially an unknown or ambiguous
-  correspondent or document type.
+- [ ] Exercise a review outcome caused by a missing whitelist entity and confirm
+  the review artifact explains the gap and its reason.
+- [ ] Add the missing entity to `whitelist.json`, let reconciliation create it,
+  and confirm the document is automatically requeued and then processed.
 - [ ] Exercise a controlled technical failure and confirm the failed outcome
   after bounded retries.
-- [ ] Verify existing user tags are retained and metadata overwrite rules are
-  honored.
-- [ ] Verify terminal documents are not selected again until manually reset to
-  only the pending state.
+- [ ] Verify existing user tags are retained, metadata overwrite rules are
+  honored, and no non-whitelisted entity is created.
+- [ ] Verify terminal documents are not selected again until reset or requeued.
 - [ ] Review real behavior and decide which M3 safeguards are actually needed
   before unattended operation.
 
@@ -306,7 +377,9 @@ Do not expand these tasks until M2 feedback establishes the necessary behavior.
   processing.
 - [ ] Add graceful shutdown that stops polling and lets the active bounded
   operation finish or abort safely.
-- [ ] Add periodic vocabulary refresh.
+- [ ] Add periodic vocabulary refresh and continuous whitelist reconciliation
+  (reconciliation and requeue logic exist from M2; M3 runs them on the poll
+  loop).
 - [ ] Confirm how Paperless exposes document update timestamps and whether they
   are suitable for identifying stale processing states.
 - [ ] Design and implement stale-processing recovery using confirmed Paperless
@@ -330,10 +403,14 @@ This milestone is optional until the local application is useful and stable.
 - [ ] Run the runtime image as a non-root user where practical.
 - [ ] Verify the image exposes no ports and needs only configuration, secrets,
   and network access to Paperless and the LLM endpoint.
+- [ ] Add a documented data-directory volume mount so `whitelist.json`,
+  `review.json`, `review.md`, and `review-log.jsonl` are reachable from the host
+  filesystem (Unraid appdata).
 - [ ] Add a simple `devenv.nix` that supplies Bun, Git, Docker CLI, and canonical
   project tasks without affecting the production image.
 - [ ] Write a concise README covering local use, configuration, privacy, state
-  tags, dry-run, troubleshooting, Docker, and Unraid.
+  tags, dry-run, the whitelist/review workflow, troubleshooting, Docker, and
+  Unraid.
 - [ ] Add and maintain an `AGENTS.md` with project constraints and canonical
   commands once the repository structure is established.
 - [ ] Document Conventional Commits in a concise `CONTRIBUTING.md`.
@@ -357,6 +434,8 @@ This milestone is optional until the local application is useful and stable.
   is useful.
 - [ ] Reassess a formal review skill or additional coding standards after the
   first implementation establishes real conventions.
+- [ ] Reassess a dedicated review UI or per-document `decisions.json` overrides
+  only if the file-based whitelist/review loop proves insufficient.
 
 ## Blocker Protocol
 
@@ -366,8 +445,8 @@ An implementation session should stop and ask for clarification when:
 - A required write cannot be made without risking removal or overwrite of user
   metadata.
 - The selected [OI] endpoint cannot provide reliably parseable structured data.
-- Real behavior requires creating metadata entities or accessing document
-  files.
+- Real behavior requires creating entities that are not in the whitelist, or
+  accessing document files.
 - A proposed dependency or abstraction materially expands the MVP.
 - Enabling live writes has not been explicitly approved at the M1 checkpoint.
 
