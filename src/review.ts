@@ -458,3 +458,60 @@ export async function appendReviewLog(
   const { appendFile } = await import("node:fs/promises");
   await appendFile(path, `${JSON.stringify(entry)}\n`, "utf8");
 }
+
+export type ReviewArtifactPaths = {
+  store: string;
+  markdown: string;
+  log: string;
+};
+
+export type ReviewArtifacts = {
+  load(): Promise<ReviewStore>;
+  save(store: ReviewStore): Promise<void>;
+  saveMarkdown(markdown: string): Promise<void>;
+  append(entry: ReviewLogEntry): Promise<void>;
+};
+
+export function fileReviewArtifacts(
+  paths: ReviewArtifactPaths,
+  now: () => string,
+): ReviewArtifacts {
+  return {
+    load: () => loadReviewStore(paths.store, now()),
+    save: (store) => saveReviewStore(paths.store, store),
+    saveMarkdown: async (markdown) => {
+      await Bun.write(paths.markdown, markdown);
+    },
+    append: (entry) => appendReviewLog(paths.log, entry),
+  };
+}
+
+export type MemoryReviewArtifacts = ReviewArtifacts & {
+  getStore(): ReviewStore;
+  getMarkdown(): string;
+  getLog(): ReviewLogEntry[];
+};
+
+export function memoryReviewArtifacts(
+  now: () => string,
+  initial?: ReviewStore,
+): MemoryReviewArtifacts {
+  let store = initial ?? emptyReviewStore(now());
+  let markdown = "";
+  const log: ReviewLogEntry[] = [];
+  return {
+    load: async () => store,
+    save: async (next) => {
+      store = next;
+    },
+    saveMarkdown: async (next) => {
+      markdown = next;
+    },
+    append: async (entry) => {
+      log.push(entry);
+    },
+    getStore: () => store,
+    getMarkdown: () => markdown,
+    getLog: () => log,
+  };
+}

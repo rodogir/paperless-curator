@@ -34,10 +34,9 @@ export type ProcessDeps = {
   targetDocumentId?: number;
 };
 
-export type ProcessOutcome =
-  | { kind: "no-candidate" }
+export type Classification =
   | {
-      kind: "processed";
+      kind: "classified";
       documentId: number;
       decision: Decision;
       proposal: Proposal | null;
@@ -53,6 +52,11 @@ export type ProcessOutcome =
       promptVersion: string;
       durationMs: number;
     };
+
+export type ProcessOutcome =
+  | { kind: "no-candidate" }
+  | Extract<Classification, { kind: "classified" }>
+  | Extract<Classification, { kind: "model-invalid" }>;
 
 function nameById(
   entries: readonly { id: number; name: string }[],
@@ -73,12 +77,14 @@ function currentTagNames(
     .map((id) => names.get(id) ?? String(id));
 }
 
-export async function processOneDocument(
+/**
+ * Selects one eligible document, either the explicit target or the first
+ * pending document without a conflicting state tag. Read-only.
+ */
+export async function findEligibleDocument(
   deps: ProcessDeps,
-): Promise<ProcessOutcome> {
-  const { config, paperless, llm, vocab, whitelist, stateTagIds, log } = deps;
-
-  let selected: DocumentDetail | null = null;
+): Promise<{ document: DocumentDetail | null; candidateCount: number }> {
+  const { paperless, stateTagIds, log } = deps;
   let candidateCount = 0;
 
   if (deps.targetDocumentId !== undefined) {
@@ -94,75 +100,72 @@ export async function processOneDocument(
             ? eligibility.conflicting
             : undefined,
       });
-    } else {
-      selected = detail;
+      return { document: null, candidateCount };
     }
-  } else {
-    const candidates = await listPendingDocuments(
-      paperless,
-      stateTagIds.pending,
-    );
-    candidateCount = candidates.length;
-    for (const candidate of candidates) {
-      const eligibility = checkEligibility(candidate.tags, stateTagIds);
-      if (!eligibility.eligible) {
-        log("warn", "document-skipped", {
-          documentId: candidate.id,
-          reason: eligibility.reason,
-          conflictingStateTagIds:
-            eligibility.reason === "conflicting-state-tags"
-              ? eligibility.conflicting
-              : undefined,
-        });
-        continue;
-      }
-      selected = await getDocument(paperless, candidate.id);
-      break;
-    }
+    return { document: detail, candidateCount };
   }
 
-  if (selected === null) {
-    log("info", "no-eligible-document", {
-      pendingTagId: stateTagIds.pending,
+  const candidates = await listPendingDocuments(paperless, stateTagIds.pending);
+  candidateCount = candidates.length;
+  for (const candidate of candidates) {
+    const eligibility = checkEligibility(candidate.tags, stateTagIds);
+    if (!eligibility.eligible) {
+      log("warn", "document-skipped", {
+        documentId: candidate.id,
+        reason: eligibility.reason,
+        conflictingStateTagIds:
+          eligibility.reason === "conflicting-state-tags"
+            ? eligibility.conflicting
+            : undefined,
+      });
+      continue;
+    }
+    return {
+      document: await getDocument(paperless, candidate.id),
       candidateCount,
-    });
-    return { kind: "no-candidate" };
+    };
   }
+  return { document: null, candidateCount };
+}
 
+function reviewForUnusableOcr(reason: string): Decision {
+  return {
+    outcome: "review",
+    changes: {
+      title: null,
+      correspondentId: null,
+      documentTypeId: null,
+      addTagIds: [],
+    },
+    reviewReasons: [`unusable OCR: ${reason}`],
+    missing: [],
+    requeueable: false,
+    notes: [],
+  };
+}
+
+/**
+ * Classifies one already-selected document: prepares OCR, calls the model, and
+ * resolves a safe decision. Performs no Paperless mutations.
+ */
+export async function classifyDocument(
+  deps: ProcessDeps,
+  document: DocumentDetail,
+): Promise<Classification> {
+  const { config, llm, vocab, whitelist, stateTagIds } = deps;
   const startedAt = Date.now();
-  const document = selected;
 
   const ocr = prepareOcr(document.content, config.limits.maxOcrChars);
   if (!ocr.ok) {
-    const reviewDecision: Decision = {
-      outcome: "review",
-      changes: {
-        title: null,
-        correspondentId: null,
-        documentTypeId: null,
-        addTagIds: [],
-      },
-      reviewReasons: [`unusable OCR: ${ocr.reason}`],
-      missing: [],
-      requeueable: false,
-      notes: [],
-    };
-    const durationMs = Date.now() - startedAt;
-    log("warn", "document-review", {
-      documentId: document.id,
-      reason: `unusable OCR: ${ocr.reason}`,
-      durationMs,
-      dryRun: config.dryRun,
-    });
     return {
-      kind: "processed",
+      kind: "classified",
       documentId: document.id,
-      decision: reviewDecision,
+      decision: reviewForUnusableOcr(ocr.reason),
       proposal: null,
       usage: null,
       promptVersion: null,
       ocr: null,
-      durationMs,
+      durationMs: Date.now() - startedAt,
     };
   }
 
@@ -188,22 +191,13 @@ export async function processOneDocument(
     },
   });
 
-  const durationMs = Date.now() - startedAt;
-
   if (!result.ok) {
-    log("warn", "model-response-invalid", {
-      documentId: document.id,
-      reason: result.reason,
-      promptVersion: result.promptVersion,
-      durationMs,
-      dryRun: config.dryRun,
-    });
     return {
       kind: "model-invalid",
       documentId: document.id,
       reason: result.reason,
       promptVersion: result.promptVersion,
-      durationMs,
+      durationMs: Date.now() - startedAt,
     };
   }
 
@@ -219,7 +213,7 @@ export async function processOneDocument(
   });
 
   return {
-    kind: "processed",
+    kind: "classified",
     documentId: document.id,
     decision,
     proposal: result.proposal,
@@ -230,6 +224,24 @@ export async function processOneDocument(
       originalChars: ocr.originalLength,
       truncated: ocr.truncated,
     },
-    durationMs,
+    durationMs: Date.now() - startedAt,
   };
+}
+
+/**
+ * Read-only dry-run orchestration: find one eligible document and classify it.
+ * The module contains no write functions.
+ */
+export async function processOneDocument(
+  deps: ProcessDeps,
+): Promise<ProcessOutcome> {
+  const { document, candidateCount } = await findEligibleDocument(deps);
+  if (document === null) {
+    deps.log("info", "no-eligible-document", {
+      pendingTagId: deps.stateTagIds.pending,
+      candidateCount,
+    });
+    return { kind: "no-candidate" };
+  }
+  return classifyDocument(deps, document);
 }

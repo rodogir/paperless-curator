@@ -259,6 +259,17 @@ export function listPendingDocuments(
   });
 }
 
+function parseDocumentDetail(value: unknown): DocumentDetail {
+  const summary = parseDocumentSummary(value);
+  const content = isPlainObject(value) ? asString(value.content) : null;
+  const modified = isPlainObject(value) ? asString(value.modified) : null;
+  return {
+    ...summary,
+    content: content ?? "",
+    modified: modified ?? "",
+  };
+}
+
 export async function getDocument(
   ctx: PaperlessContext,
   id: number,
@@ -267,14 +278,38 @@ export async function getDocument(
     ctx,
     buildUrl(ctx.baseUrl, `/api/documents/${id}/`),
   );
-  const summary = parseDocumentSummary(raw);
-  const content = isPlainObject(raw) ? asString(raw.content) : null;
-  const modified = isPlainObject(raw) ? asString(raw.modified) : null;
-  return {
-    ...summary,
-    content: content ?? "",
-    modified: modified ?? "",
-  };
+  return parseDocumentDetail(raw);
+}
+
+export type DocumentPatch = {
+  title?: string;
+  correspondent?: number;
+  document_type?: number;
+  tags?: number[];
+};
+
+/**
+ * Applies a partial document update. PATCH accepts metadata and `tags` in one
+ * request. Callers must only pass fields that should change; this function
+ * never sends a delete.
+ */
+export async function updateDocument(
+  ctx: PaperlessContext,
+  id: number,
+  patch: DocumentPatch,
+): Promise<DocumentDetail> {
+  const raw = await requestJson({
+    source: "paperless",
+    url: buildUrl(ctx.baseUrl, `/api/documents/${id}/`),
+    method: "PATCH",
+    headers: { ...headers(ctx), "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+    fetchImpl: ctx.fetchImpl,
+    retry: ctx.retry,
+    sleep: ctx.sleep,
+    onRetry: ctx.onRetry,
+  });
+  return parseDocumentDetail(raw);
 }
 
 /**

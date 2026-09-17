@@ -3,6 +3,9 @@ import {
   loadConfig,
   resolveConfigPath,
   resolveDataDir,
+  reviewLogPath,
+  reviewMarkdownPath,
+  reviewStorePath,
   whitelistPath,
 } from "./config.ts";
 import { type RetryInfo, type RetryPolicy, sleep } from "./http.ts";
@@ -21,21 +24,28 @@ import {
   type PaperlessContext,
   type Tag,
 } from "./paperless.ts";
-import { type ProcessOutcome, processOneDocument } from "./process.ts";
+import { fileReviewArtifacts } from "./review.ts";
 import { loadWhitelist, type Whitelist } from "./whitelist.ts";
+import { type CycleResult, runCycle } from "./worker.ts";
 
-function parseArgs(argv: readonly string[]): {
+type ParsedArgs = {
   configPath: string | null;
   documentId: number | null;
+  live: boolean;
   help: boolean;
-} {
+};
+
+function parseArgs(argv: readonly string[]): ParsedArgs {
   let configPath: string | null = null;
   let documentId: number | null = null;
+  let live = false;
   let help = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--help" || arg === "-h") {
       help = true;
+    } else if (arg === "--live") {
+      live = true;
     } else if (arg === "--config") {
       configPath = argv[index + 1] ?? null;
       index += 1;
@@ -48,7 +58,7 @@ function parseArgs(argv: readonly string[]): {
       documentId = parseDocumentId(arg.slice("--document-id=".length));
     }
   }
-  return { configPath, documentId, help };
+  return { configPath, documentId, live, help };
 }
 
 function parseDocumentId(value: string | undefined): number {
@@ -112,78 +122,59 @@ async function resolveStateTagsWithRetry(
   }
 }
 
-function summarizeOutcome(
-  outcome: ProcessOutcome,
-  vocab: {
-    tagNames: Map<number, string>;
-    correspondentNames: Map<number, string>;
-    documentTypeNames: Map<number, string>;
-  },
+function summarizeCycle(
+  result: CycleResult,
+  tagNames: Map<number, string>,
   config: AppConfig,
-  model: string,
 ): Record<string, unknown> {
-  if (outcome.kind === "no-candidate") {
-    return { status: "no-eligible-document" };
-  }
-  if (outcome.kind === "model-invalid") {
-    return {
-      status: "review",
-      documentId: outcome.documentId,
-      reviewReasons: [`invalid model output: ${outcome.reason}`],
-      promptVersion: outcome.promptVersion,
-      durationMs: outcome.durationMs,
-      dryRun: config.dryRun,
-      model,
-    };
-  }
-
-  const { decision } = outcome;
-  const changes = decision.changes;
+  const decision = result.decision;
+  const classification = result.classification;
+  const modelTitle =
+    classification?.kind === "classified"
+      ? (classification.proposal?.title ?? null)
+      : null;
   return {
-    status:
-      decision.outcome === "update" ? "proposed-update" : decision.outcome,
-    documentId: outcome.documentId,
-    proposedTitle: changes.title,
-    proposedTags: changes.addTagIds.map(
-      (id) => vocab.tagNames.get(id) ?? String(id),
+    status: result.outcome,
+    documentId: result.documentId,
+    created: result.created.map((entry) => ({
+      kind: entry.kind,
+      name: entry.name,
+      action: entry.action,
+    })),
+    requeues: result.requeues,
+    proposedTitle: decision?.changes.title ?? null,
+    proposedTags: (decision?.changes.addTagIds ?? []).map(
+      (id) => tagNames.get(id) ?? String(id),
     ),
-    proposedCorrespondent:
-      changes.correspondentId === null
-        ? null
-        : (vocab.correspondentNames.get(changes.correspondentId) ??
-          String(changes.correspondentId)),
-    proposedDocumentType:
-      changes.documentTypeId === null
-        ? null
-        : (vocab.documentTypeNames.get(changes.documentTypeId) ??
-          String(changes.documentTypeId)),
-    reviewReasons: decision.reviewReasons,
-    notes: decision.notes,
-    modelTitle: outcome.proposal?.title,
-    modelUsage: outcome.usage,
-    promptVersion: outcome.promptVersion,
-    ocrChars: outcome.ocr?.chars,
-    ocrOriginalChars: outcome.ocr?.originalChars,
-    ocrTruncated: outcome.ocr?.truncated,
-    durationMs: outcome.durationMs,
+    proposedCorrespondentId: decision?.changes.correspondentId ?? null,
+    proposedDocumentTypeId: decision?.changes.documentTypeId ?? null,
+    reviewReasons: decision?.reviewReasons ?? [],
+    requeueable: decision?.requeueable ?? false,
+    missing: decision?.missing ?? [],
+    notes: decision?.notes ?? [],
+    modelTitle,
+    promptVersion: classification?.promptVersion,
+    model: config.llm.model,
     dryRun: config.dryRun,
-    model,
   };
 }
 
-const HELP = `paperless-curator (M1: read-only dry run)
+const HELP = `paperless-curator (M2: safe write path and review loop)
 
 Usage:
-  bun run src/index.ts [--config <path>] [--document-id <id>]
+  bun run src/index.ts [--config <path>] [--document-id <id>] [--live]
 
 Options:
   --config <path>       path to the JSON configuration file
-  --document-id <id>    dry-run one deliberately selected document
+  --document-id <id>    process one deliberately selected document
+  --live                enable Paperless writes (requires dryRun=false and
+                        explicit approval); dry-run is the default
 
 Environment:
   PAPERLESS_API_TOKEN   required, Paperless API token
   LLM_API_KEY           required, OpenAI-compatible API key
   CONFIG_PATH           optional, path to config JSON (default: config.json)
+  DATA_DIR              optional, overrides config.dataDir (default: ./data)
 `;
 
 async function main(): Promise<number> {
@@ -217,10 +208,18 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  if (!config.dryRun) {
-    log("error", "live-mode-disabled", {
+  // Explicit live-mode guard: writes require both dryRun=false in config and
+  // the --live flag, so a configuration edit alone cannot enable writes.
+  if (!config.dryRun && !args.live) {
+    log("error", "live-mode-not-enabled", {
       message:
-        "live writes are not implemented in this milestone; set dryRun=true",
+        "config has dryRun=false but --live was not passed; refusing to write",
+    });
+    return 1;
+  }
+  if (config.dryRun && args.live) {
+    log("error", "live-mode-mismatch", {
+      message: "--live was passed but config has dryRun=true; set dryRun=false",
     });
     return 1;
   }
@@ -245,12 +244,30 @@ async function main(): Promise<number> {
     onRetry,
   };
 
+  const dataDir = resolveDataDir(process.env, config);
+
   log("info", "startup", {
     configPath,
     paperlessUrl: config.paperless.baseUrl,
     llmUrl: config.llm.baseUrl,
     model: config.llm.model,
     dryRun: config.dryRun,
+    dataDir,
+  });
+
+  let whitelist: Whitelist;
+  try {
+    whitelist = await loadWhitelist(whitelistPath(dataDir), config.stateTags);
+  } catch (error) {
+    log("error", "whitelist-error", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return 1;
+  }
+  log("info", "whitelist-loaded", {
+    tagCount: whitelist.tags.length,
+    correspondentCount: whitelist.correspondents.length,
+    documentTypeCount: whitelist.documentTypes.length,
   });
 
   const { tags, ids: stateTagIds } = await resolveStateTagsWithRetry(
@@ -271,50 +288,34 @@ async function main(): Promise<number> {
     documentTypeCount: documentTypes.length,
   });
 
-  const dataDir = resolveDataDir(process.env, config);
-  let whitelist: Whitelist;
-  try {
-    whitelist = await loadWhitelist(whitelistPath(dataDir), config.stateTags);
-  } catch (error) {
-    log("error", "whitelist-error", {
-      message: error instanceof Error ? error.message : String(error),
-    });
-    return 1;
-  }
-  log("info", "whitelist-loaded", {
-    dataDir,
-    tagCount: whitelist.tags.length,
-    correspondentCount: whitelist.correspondents.length,
-    documentTypeCount: whitelist.documentTypes.length,
-  });
+  const artifacts = fileReviewArtifacts(
+    {
+      store: reviewStorePath(dataDir),
+      markdown: reviewMarkdownPath(dataDir),
+      log: reviewLogPath(dataDir),
+    },
+    () => new Date().toISOString(),
+  );
 
-  const outcome = await processOneDocument({
+  const result = await runCycle({
     config,
     paperless,
     llm,
-    vocab: { tags, correspondents, documentTypes },
-    whitelist,
-    stateTagIds,
     log,
+    whitelist,
+    vocab: { tags, correspondents, documentTypes },
+    stateTagIds,
+    artifacts,
     targetDocumentId: args.documentId ?? undefined,
   });
 
   log(
     "info",
-    "proposal",
-    summarizeOutcome(
-      outcome,
-      {
-        tagNames: new Map(tags.map((tag) => [tag.id, tag.name])),
-        correspondentNames: new Map(
-          correspondents.map((entry) => [entry.id, entry.name]),
-        ),
-        documentTypeNames: new Map(
-          documentTypes.map((entry) => [entry.id, entry.name]),
-        ),
-      },
+    "cycle-complete",
+    summarizeCycle(
+      result,
+      new Map(tags.map((tag) => [tag.id, tag.name])),
       config,
-      config.llm.model,
     ),
   );
 

@@ -112,9 +112,9 @@ describe("dry-run processing", () => {
 
     const outcome = await processOneDocument(deps);
 
-    expect(outcome.kind).toBe("processed");
-    if (outcome.kind !== "processed") {
-      throw new Error("expected a processed outcome");
+    expect(outcome.kind).toBe("classified");
+    if (outcome.kind !== "classified") {
+      throw new Error("expected a classified outcome");
     }
     expect(outcome.documentId).toBe(123);
     expect(outcome.decision.outcome).toBe("update");
