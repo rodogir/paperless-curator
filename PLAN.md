@@ -130,6 +130,8 @@ Initial configuration categories:
 - Request timeout, retry count, and retry backoff
 - OCR and title limits
 - Metadata refresh interval
+- Stale-processing threshold
+- Service-connectivity retry backoff (initial delay and cap)
 - Data directory containing the whitelist and review files
 
 The data directory (`config.dataDir`, default `./data`, overridden by
@@ -162,6 +164,11 @@ Conservative initial defaults:
 - Two retries after the initial request, with exponential backoff starting at
   one second
 - Indefinite service-connectivity retries with backoff capped at 60 seconds
+- Stale-processing threshold: 15 minutes (live mode only). This is far larger
+  than the bounded worst case of one claimed document and larger than the poll
+  and refresh intervals, so a healthy worker never sees its own active document
+  as stale. Recovery uses `document.modified`; see `docs/api-notes.md` for the
+  confirmed semantics and its limitation.
 
 When OCR exceeds the limit, use deterministic truncation that retains content
 from both the beginning and end, and log that truncation occurred. Adjust this
@@ -627,7 +634,12 @@ not speculative design:
 - ~~Whether to build a review UI~~ Resolved by decision: no UI. The review
   workflow is a human-edited `whitelist.json` plus a generated `review.md` /
   `review.json` in the mounted data directory.
-- Which Paperless timestamp, if any, is reliable for stale-processing recovery
+- ~~Which Paperless timestamp, if any, is reliable for stale-processing
+  recovery~~ Resolved in M3: stale recovery uses the always-present
+  `document.modified` timestamp, with a documented limitation that it reflects
+  any change. The optional `GET /api/documents/{id}/history/` audit endpoint
+  records exact state-tag transition times but is not depended on. See
+  `docs/api-notes.md`.
 - Final timeout, retry, polling, vocabulary refresh, and OCR limit defaults.
   M0 finding: `AbortSignal.timeout` alone did not reliably bound the whole
   request, so the client enforces a hard whole-operation timeout.
