@@ -8,30 +8,27 @@ import {
   reviewStorePath,
   whitelistPath,
 } from "./config.ts";
-import { type RetryInfo, type RetryPolicy, sleep } from "./http.ts";
+import type { Vocabularies } from "./decision.ts";
+import type { RetryInfo, RetryPolicy } from "./http.ts";
 import type { LlmContext } from "./llm.ts";
-import { createLogger, type Logger } from "./logger.ts";
-import type { StateTagIds } from "./metadata.ts";
-import {
-  allStateTagIds,
-  excludeStateTags,
-  resolveStateTags,
-} from "./metadata.ts";
+import { createLogger } from "./logger.ts";
+import { resolveStateTags } from "./metadata.ts";
 import {
   listCorrespondents,
   listDocumentTypes,
   listTags,
   type PaperlessContext,
-  type Tag,
 } from "./paperless.ts";
 import { fileReviewArtifacts } from "./review.ts";
-import { loadWhitelist, type Whitelist } from "./whitelist.ts";
+import { runWorkerLoop, type WorkerState } from "./runner.ts";
+import { loadWhitelist } from "./whitelist.ts";
 import { type CycleResult, runCycle } from "./worker.ts";
 
 type ParsedArgs = {
   configPath: string | null;
   documentId: number | null;
   live: boolean;
+  once: boolean;
   help: boolean;
 };
 
@@ -39,6 +36,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   let configPath: string | null = null;
   let documentId: number | null = null;
   let live = false;
+  let once = false;
   let help = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -46,6 +44,8 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       help = true;
     } else if (arg === "--live") {
       live = true;
+    } else if (arg === "--once") {
+      once = true;
     } else if (arg === "--config") {
       configPath = argv[index + 1] ?? null;
       index += 1;
@@ -58,7 +58,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       documentId = parseDocumentId(arg.slice("--document-id=".length));
     }
   }
-  return { configPath, documentId, live, help };
+  return { configPath, documentId, live, once, help };
 }
 
 function parseDocumentId(value: string | undefined): number {
@@ -77,55 +77,11 @@ function retryPolicy(config: AppConfig): RetryPolicy {
   };
 }
 
-/**
- * Keeps retrying until the state tags can be validated. Missing or ambiguous
- * tags block processing; the process stays alive and periodically revalidates
- * while rate-limiting the actionable error log.
- */
-async function resolveStateTagsWithRetry(
-  ctx: PaperlessContext,
-  config: AppConfig,
-  log: Logger,
-): Promise<{ tags: Tag[]; ids: StateTagIds }> {
-  let attempt = 0;
-  let lastProblemLogAt = 0;
-
-  for (;;) {
-    try {
-      const tags = await listTags(ctx);
-      const resolution = resolveStateTags(tags, config.stateTags);
-      if (resolution.ok) {
-        return { tags, ids: resolution.ids };
-      }
-      const now = Date.now();
-      if (now - lastProblemLogAt > 60_000) {
-        lastProblemLogAt = now;
-        log("error", "state-tags-invalid", {
-          problems: resolution.problems,
-          action:
-            "create the missing tags or fix their names in configuration; processing is blocked",
-        });
-      }
-    } catch (error) {
-      const now = Date.now();
-      if (now - lastProblemLogAt > 30_000) {
-        lastProblemLogAt = now;
-        log("warn", "paperless-unavailable", {
-          message: error instanceof Error ? error.message : String(error),
-          attempt,
-        });
-      }
-    }
-
-    attempt += 1;
-    await sleep(Math.min(2 ** Math.min(attempt, 6) * 1_000, 60_000));
-  }
-}
-
 function summarizeCycle(
   result: CycleResult,
   tagNames: Map<number, string>,
   config: AppConfig,
+  durationMs: number,
 ): Record<string, unknown> {
   const decision = result.decision;
   const classification = result.classification;
@@ -136,12 +92,14 @@ function summarizeCycle(
   return {
     status: result.outcome,
     documentId: result.documentId,
+    durationMs,
     created: result.created.map((entry) => ({
       kind: entry.kind,
       name: entry.name,
       action: entry.action,
     })),
     requeues: result.requeues,
+    staleRecoveries: result.staleRecoveries,
     proposedTitle: decision?.changes.title ?? null,
     proposedTags: (decision?.changes.addTagIds ?? []).map(
       (id) => tagNames.get(id) ?? String(id),
@@ -159,16 +117,17 @@ function summarizeCycle(
   };
 }
 
-const HELP = `paperless-curator (M2: safe write path and review loop)
+const HELP = `paperless-curator (M3: operational minimum)
 
 Usage:
-  bun run src/index.ts [--config <path>] [--document-id <id>] [--live]
+  bun run src/index.ts [--config <path>] [--document-id <id>] [--live] [--once]
 
 Options:
   --config <path>       path to the JSON configuration file
   --document-id <id>    process one deliberately selected document
   --live                enable Paperless writes (requires dryRun=false and
                         explicit approval); dry-run is the default
+  --once                run a single cycle and exit instead of polling
 
 Environment:
   PAPERLESS_API_TOKEN   required, Paperless API token
@@ -252,41 +211,31 @@ async function main(): Promise<number> {
     llmUrl: config.llm.baseUrl,
     model: config.llm.model,
     dryRun: config.dryRun,
+    mode: args.once ? "once" : "continuous",
+    pollIntervalMs: config.operations.pollIntervalMs,
+    vocabularyRefreshMs: config.operations.vocabularyRefreshMs,
+    staleProcessingThresholdMs: config.operations.staleProcessingThresholdMs,
     dataDir,
   });
 
-  let whitelist: Whitelist;
+  // Invalid whitelist configuration is a fatal startup error. Reloads after
+  // startup block processing instead (handled inside the loop).
   try {
-    whitelist = await loadWhitelist(whitelistPath(dataDir), config.stateTags);
+    const whitelist = await loadWhitelist(
+      whitelistPath(dataDir),
+      config.stateTags,
+    );
+    log("info", "whitelist-loaded", {
+      tagCount: whitelist.tags.length,
+      correspondentCount: whitelist.correspondents.length,
+      documentTypeCount: whitelist.documentTypes.length,
+    });
   } catch (error) {
     log("error", "whitelist-error", {
       message: error instanceof Error ? error.message : String(error),
     });
     return 1;
   }
-  log("info", "whitelist-loaded", {
-    tagCount: whitelist.tags.length,
-    correspondentCount: whitelist.correspondents.length,
-    documentTypeCount: whitelist.documentTypes.length,
-  });
-
-  const { tags, ids: stateTagIds } = await resolveStateTagsWithRetry(
-    paperless,
-    config,
-    log,
-  );
-  log("info", "state-tags-validated", { stateTagIds });
-
-  const [correspondents, documentTypes] = await Promise.all([
-    listCorrespondents(paperless),
-    listDocumentTypes(paperless),
-  ]);
-  const selectableTags = excludeStateTags(tags, allStateTagIds(stateTagIds));
-  log("info", "vocabularies-loaded", {
-    tagCount: selectableTags.length,
-    correspondentCount: correspondents.length,
-    documentTypeCount: documentTypes.length,
-  });
 
   const artifacts = fileReviewArtifacts(
     {
@@ -297,27 +246,82 @@ async function main(): Promise<number> {
     () => new Date().toISOString(),
   );
 
-  const result = await runCycle({
-    config,
-    paperless,
-    llm,
-    log,
-    whitelist,
-    vocab: { tags, correspondents, documentTypes },
-    stateTagIds,
-    artifacts,
-    targetDocumentId: args.documentId ?? undefined,
-  });
+  // Re-reads the whitelist and re-lists every Paperless vocabulary. Throwing
+  // here blocks processing and is retried with capped backoff by the loop.
+  const refresh = async (): Promise<WorkerState> => {
+    const whitelist = await loadWhitelist(
+      whitelistPath(dataDir),
+      config.stateTags,
+    );
+    const tags = await listTags(paperless);
+    const resolution = resolveStateTags(tags, config.stateTags);
+    if (!resolution.ok) {
+      throw new Error(`state tags invalid: ${resolution.problems.join("; ")}`);
+    }
+    log("info", "state-tags-validated", { stateTagIds: resolution.ids });
+    const [correspondents, documentTypes] = await Promise.all([
+      listCorrespondents(paperless),
+      listDocumentTypes(paperless),
+    ]);
+    const vocab: Vocabularies = { tags, correspondents, documentTypes };
+    return { whitelist, vocab, stateTagIds: resolution.ids };
+  };
 
-  log(
-    "info",
-    "cycle-complete",
-    summarizeCycle(
-      result,
-      new Map(tags.map((tag) => [tag.id, tag.name])),
+  const cycle = async (state: WorkerState): Promise<CycleResult> => {
+    const startedAt = Date.now();
+    const result = await runCycle({
       config,
-    ),
-  );
+      paperless,
+      llm,
+      log,
+      whitelist: state.whitelist,
+      vocab: state.vocab,
+      stateTagIds: state.stateTagIds,
+      artifacts,
+      targetDocumentId: args.documentId ?? undefined,
+    });
+    log(
+      "info",
+      "cycle-complete",
+      summarizeCycle(
+        result,
+        new Map(state.vocab.tags.map((tag) => [tag.id, tag.name])),
+        config,
+        Date.now() - startedAt,
+      ),
+    );
+    return result;
+  };
+
+  const controller = new AbortController();
+  const requestShutdown = (signal: NodeJS.Signals): void => {
+    log("info", "shutdown-requested", { signal });
+    controller.abort();
+  };
+  const onSigint = (): void => requestShutdown("SIGINT");
+  const onSigterm = (): void => requestShutdown("SIGTERM");
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
+
+  try {
+    const loop = await runWorkerLoop({
+      config,
+      log,
+      initial: null,
+      refresh,
+      cycle,
+      maxCycles: args.once ? 1 : undefined,
+      signal: controller.signal,
+    });
+    log("info", "worker-exit", {
+      reason: loop.reason,
+      cycles: loop.cycles,
+      lastOutcome: loop.lastOutcome,
+    });
+  } finally {
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+  }
 
   return 0;
 }
