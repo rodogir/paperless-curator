@@ -11,6 +11,10 @@ config.json
 config.local.json
 config.*.local.json
 
+# Mounted data directory: human-edited whitelist and worker review artifacts.
+# Contains derived personal metadata; never commit.
+data/
+
 # Build output
 dist/
 

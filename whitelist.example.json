@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "tags": [
+    {
+      "name": "Invoice",
+      "aliases": ["Rechnung", "Faktura"],
+      "description": "Bills and invoices"
+    }
+  ],
+  "correspondents": [
+    {
+      "name": "Existing Corp",
+      "aliases": ["NewCorp"],
+      "description": "Use for all NewCorp mail"
+    }
+  ],
+  "documentTypes": [
+    {
+      "name": "Passport",
+      "aliases": ["Reisepass"],
+      "description": "Identity documents"
+    }
+  ]
+}

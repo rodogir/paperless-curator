@@ -32,6 +32,7 @@ const config: AppConfig = {
   overwrite: { title: false, correspondent: false, documentType: false },
   limits: { maxTitleLength: 128, maxOcrChars: 30000 },
   request: { timeoutMs: 1000, maxRetries: 0, retryBackoffMs: 1 },
+  dataDir: "./data",
 };
 
 describe("dry-run processing", () => {

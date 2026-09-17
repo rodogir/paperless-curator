@@ -21,9 +21,11 @@ export type AppConfig = {
   };
   limits: { maxTitleLength: number; maxOcrChars: number };
   request: { timeoutMs: number; maxRetries: number; retryBackoffMs: number };
+  dataDir: string;
 };
 
 export const DEFAULT_CONFIG_PATH = "config.json";
+export const DEFAULT_DATA_DIR = "./data";
 
 /**
  * Paperless-ngx `title` has max_length 128 in the v3 API schema. Generating a
@@ -278,10 +280,14 @@ export function parseConfig(raw: unknown): AppConfig {
         max: 60_000,
       }),
     },
+    dataDir: readString(root, "dataDir", "config", DEFAULT_DATA_DIR),
   };
 
   if (config.llm.model.trim().length === 0) {
     fail("config.llm.model", "must not be empty");
+  }
+  if (config.dataDir.trim().length === 0) {
+    fail("config.dataDir", "must not be empty");
   }
 
   return config;
@@ -295,6 +301,38 @@ export function resolveConfigPath(
     return fromEnv;
   }
   return DEFAULT_CONFIG_PATH;
+}
+
+/**
+ * `DATA_DIR` overrides `config.dataDir`, which itself defaults to `./data`.
+ * The returned path has no trailing slash so callers can append file names.
+ */
+export function resolveDataDir(
+  env: Record<string, string | undefined>,
+  config: AppConfig,
+): string {
+  const fromEnv = env.DATA_DIR;
+  const base =
+    typeof fromEnv === "string" && fromEnv.trim().length > 0
+      ? fromEnv.trim()
+      : config.dataDir.trim();
+  return base.replace(/\/+$/, "") || ".";
+}
+
+export function whitelistPath(dataDir: string): string {
+  return `${dataDir}/whitelist.json`;
+}
+
+export function reviewStorePath(dataDir: string): string {
+  return `${dataDir}/review.json`;
+}
+
+export function reviewMarkdownPath(dataDir: string): string {
+  return `${dataDir}/review.md`;
+}
+
+export function reviewLogPath(dataDir: string): string {
+  return `${dataDir}/review-log.jsonl`;
 }
 
 export async function loadConfig(path: string): Promise<AppConfig> {

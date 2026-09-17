@@ -86,6 +86,38 @@ All five configured tags exist: `ai-failed`, `ai-pending`, `ai-processed`,
 `ai-processing`, `ai-review`. Tags are resolved by normalized name at runtime;
 ids are not hardcoded.
 
+### Entity creation endpoints (M2)
+
+Confirmed from `GET /api/schema/?format=json` (`info.version` 6.0.0) on the same
+3.0.0 build:
+
+- `POST /api/tags/` (`tags_create`, request `TagRequest`)
+- `POST /api/correspondents/` (`correspondents_create`, request
+  `CorrespondentRequest`)
+- `POST /api/document_types/` (`document_types_create`, request
+  `DocumentTypeRequest`)
+
+Each request body requires only `name`:
+
+```json
+{ "name": "Example" }
+```
+
+- `name` is a string with `minLength` 1 and `maxLength` 128. The worker sends
+  `name` and no other field; defaults apply server-side.
+- Optional fields the worker does not send include `match`, `matching_algorithm`,
+  `is_insensitive`, `owner`, and `set_permissions`; tags additionally accept
+  `color`, `is_inbox_tag`, and `parent`.
+- Success is `201` with the created object. The response exposes at least
+  `id` (integer) and `name` (string), plus read-only `slug`, `document_count`,
+  and `user_can_change`. The worker reads back only `id` and `name`.
+
+Duplicate-name behavior was **not** probed with a live `POST` (that would create
+an entity outside the whitelist). The worker must not depend on the API to reject
+duplicates; idempotency comes from re-resolving the name against a freshly
+listed vocabulary immediately before creating. Confirming the installed
+duplicate-name response remains a live-checkpoint item.
+
 ## OpenAI-compatible LLM endpoint
 
 - Base URL: `https://api.surplusintelligence.ai/v1`.

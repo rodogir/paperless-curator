@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_DATA_DIR,
   DEFAULT_LIMITS,
   DEFAULT_REQUEST,
   DEFAULT_STATE_TAGS,
   PAPERLESS_TITLE_MAX_LENGTH,
   parseConfig,
+  resolveDataDir,
+  whitelistPath,
 } from "../src/config.ts";
 
 const minimal = {
@@ -26,6 +29,18 @@ describe("parseConfig", () => {
     expect(config.limits).toEqual(DEFAULT_LIMITS);
     expect(config.request).toEqual(DEFAULT_REQUEST);
     expect(config.limits.maxTitleLength).toBe(PAPERLESS_TITLE_MAX_LENGTH);
+    expect(config.dataDir).toBe(DEFAULT_DATA_DIR);
+  });
+
+  test("accepts a configured data directory", () => {
+    const config = parseConfig({ ...minimal, dataDir: "/mnt/appdata/curator" });
+    expect(config.dataDir).toBe("/mnt/appdata/curator");
+  });
+
+  test("rejects an empty data directory", () => {
+    expect(() => parseConfig({ ...minimal, dataDir: "   " })).toThrow(
+      /config\.dataDir/,
+    );
   });
 
   test("strips trailing slashes from base urls", () => {
@@ -112,5 +127,24 @@ describe("parseConfig", () => {
         llm: { baseUrl: "https://api.example.com", model: "  " },
       }),
     ).toThrow(/config\.llm\.model/);
+  });
+});
+
+describe("resolveDataDir", () => {
+  const config = parseConfig({ ...minimal, dataDir: "./configured" });
+
+  test("uses DATA_DIR when set and trims trailing slashes", () => {
+    expect(resolveDataDir({ DATA_DIR: "/srv/data/" }, config)).toBe(
+      "/srv/data",
+    );
+    expect(resolveDataDir({ DATA_DIR: "" }, config)).toBe("./configured");
+  });
+
+  test("falls back to config.dataDir", () => {
+    expect(resolveDataDir({}, config)).toBe("./configured");
+  });
+
+  test("builds the whitelist path", () => {
+    expect(whitelistPath("./data")).toBe("./data/whitelist.json");
   });
 });
