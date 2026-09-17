@@ -394,32 +394,43 @@ session.
 
 ### M2 Real-Service Checkpoint
 
-- [~] Use disposable or deliberately selected documents to exercise a
+- [x] Use disposable or deliberately selected documents to exercise a
   successful processed outcome.
-  - Blocked on explicit live-write approval. Document 34 is the agreed target;
-    document 10 must not be processed.
-- [~] Exercise a review outcome caused by a missing whitelist entity and confirm
+  - Done: live cycle on document 34 only (approved). It was claimed, processed,
+    and left with `ai-processed`. Document 10 was not touched.
+- [x] Exercise a review outcome caused by a missing whitelist entity and confirm
   the review artifact explains the gap and its reason.
-  - Pending live approval. A read-only dry run already produced a `proposal-v2`
-    review with six well-reasoned whitelist gaps for document 34.
-- [~] Add the missing entity to `whitelist.json`, let reconciliation create it,
+  - Done: the live run recorded a requeueable review for document 34 with four
+    missing entities and reasons; `data/review.json` and `data/review.md` were
+    written.
+- [x] Add the missing entity to `whitelist.json`, let reconciliation create it,
   and confirm the document is automatically requeued and then processed.
-  - Pending live approval. The mocked cycle test (`tests/worker.test.ts`)
-    already proves create -> requeue -> process end to end. Note the real
-    document-34 review is non-requeueable because the model also cited OCR
-    uncertainty, so it would not auto-requeue as-is; see the checkpoint notes.
+  - Done: adding the four suggested entities caused reconciliation to create
+    tags `Passaporte` (75) and `Ausweisdokument` (76), correspondent
+    `República Federativa do Brasil` (15), and document type `Passaporte` (19);
+    document 34 auto-requeued (`ai-review` -> `ai-pending`, attempts 2) and was
+    then processed. A repeated live cycle created nothing and skipped the
+    terminal document.
 - [~] Exercise a controlled technical failure and confirm the failed outcome
   after bounded retries.
-  - Pending live approval. Bounded retry and failed-state routing are covered by
-    mocked tests.
-- [~] Verify existing user tags are retained, metadata overwrite rules are
+  - Not forced live to avoid leaving a document in `ai-failed`. Bounded request
+    retries and failed-state routing are covered by `tests/http.test.ts` and
+    `tests/worker.test.ts`.
+- [x] Verify existing user tags are retained, metadata overwrite rules are
   honored, and no non-whitelisted entity is created.
-  - Pending live approval.
-- [~] Verify terminal documents are not selected again until reset or requeued.
-  - Pending live approval.
-- [~] Review real behavior and decide which M3 safeguards are actually needed
+  - Done: document 34's existing title was preserved (overwrite disabled) and
+    document 10 was untouched. Only the four whitelisted entities were created;
+    no entity came from model output.
+- [x] Verify terminal documents are not selected again until reset or requeued.
+  - Done: the follow-up cycle skipped document 34 with `missing-pending-tag`
+    and its `modified` timestamp did not change.
+- [x] Review real behavior and decide which M3 safeguards are actually needed
   before unattended operation.
-  - Pending live approval.
+  - Done: model behavior is non-deterministic (the dry run returned model
+    uncertainty while the live run returned a requeueable gap for the same
+    document). M3 should prioritize continuous polling, stale `ai-processing`
+    recovery (a crash after claiming strands the document), and periodic
+    whitelist/vocabulary refresh.
 
 ## M3: Operational Minimum
 

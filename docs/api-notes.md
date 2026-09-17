@@ -112,11 +112,13 @@ Each request body requires only `name`:
   `id` (integer) and `name` (string), plus read-only `slug`, `document_count`,
   and `user_can_change`. The worker reads back only `id` and `name`.
 
-Duplicate-name behavior was **not** probed with a live `POST` (that would create
-an entity outside the whitelist). The worker must not depend on the API to reject
-duplicates; idempotency comes from re-resolving the name against a freshly
-listed vocabulary immediately before creating. Confirming the installed
-duplicate-name response remains a live-checkpoint item.
+Live confirmation (M2 checkpoint): all three endpoints returned `201` with the
+created `id` and `name` for whitelisted names, and a repeated cycle created
+nothing. Duplicate-name behavior was **not** probed by deliberately posting an
+existing name, because that could create a duplicate entity outside the
+whitelist. The worker must not depend on the API to reject duplicates;
+idempotency comes from re-resolving the name against a freshly listed vocabulary
+immediately before creating.
 
 ## OpenAI-compatible LLM endpoint
 
