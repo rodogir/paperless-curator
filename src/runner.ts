@@ -52,11 +52,6 @@ export function serviceBackoffDelay(
   return Math.min(initialMs * 2 ** safeAttempt, maxMs);
 }
 
-export type CycleMeta = {
-  cycle: number;
-  durationMs: number;
-};
-
 export type WorkerLoopDeps = {
   config: AppConfig;
   log: Logger;
@@ -69,7 +64,6 @@ export type WorkerLoopDeps = {
   refresh: () => Promise<WorkerState>;
   /** Runs exactly one document cycle against the supplied state. */
   cycle: (state: WorkerState) => Promise<CycleResult>;
-  onCycleComplete?: (result: CycleResult, meta: CycleMeta) => void;
   /** Stops after this many completed cycles. Used for `--once`. */
   maxCycles?: number;
   now?: () => number;
@@ -149,7 +143,6 @@ export async function runWorkerLoop(
       continue;
     }
 
-    const startedAt = now();
     let result: CycleResult;
     try {
       result = await deps.cycle(state);
@@ -173,10 +166,6 @@ export async function runWorkerLoop(
     serviceFailures = 0;
     cycles += 1;
     lastOutcome = result.outcome;
-    deps.onCycleComplete?.(result, {
-      cycle: cycles,
-      durationMs: now() - startedAt,
-    });
 
     // Reconciliation may have created whitelist entities. Re-list immediately
     // so the next cycle sees them instead of re-planning the same creations.
