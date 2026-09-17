@@ -11,9 +11,13 @@ import { jsonResponse, loadFixture } from "./helpers.ts";
 
 const promptInput: PromptInput = {
   ocr: "synthetic OCR text",
-  allowedTags: ["Example Tag"],
-  allowedCorrespondents: ["Example Correspondent"],
-  allowedDocumentTypes: ["Example Type"],
+  allowedTags: [{ name: "Example Tag", aliases: [], description: null }],
+  allowedCorrespondents: [
+    { name: "Example Correspondent", aliases: [], description: null },
+  ],
+  allowedDocumentTypes: [
+    { name: "Example Type", aliases: [], description: null },
+  ],
   current: {
     title: "Scanned Document",
     correspondent: null,
@@ -35,8 +39,8 @@ function context(
   };
 }
 
-describe("parseProposal", () => {
-  test("accepts a well-formed proposal", () => {
+describe("parseProposal (proposal-v2)", () => {
+  test("accepts a well-formed v2 proposal with suggestions", () => {
     const result = parseProposal({
       title: "Statement",
       tags: ["Example Tag"],
@@ -44,32 +48,67 @@ describe("parseProposal", () => {
       document_type: null,
       review: false,
       review_reasons: [],
+      suggested_tags: [{ name: "Passport", reason: "identifies a passport" }],
+      suggested_correspondent: null,
+      suggested_document_type: {
+        name: "Passport",
+        reason: "identity document",
+      },
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.title).toBe("Statement");
       expect(result.value.documentType).toBeNull();
+      expect(result.value.suggestedTags).toEqual([
+        { name: "Passport", reason: "identifies a passport" },
+      ]);
+      expect(result.value.suggestedDocumentType?.name).toBe("Passport");
+      expect(result.value.suggestedCorrespondent).toBeNull();
     }
   });
 
-  test("rejects missing and mistyped fields", () => {
-    expect(parseProposal({ title: "", tags: [42], review: "yes" }).ok).toBe(
-      false,
-    );
+  test("rejects missing required fields", () => {
+    expect(parseProposal({ title: "T", tags: [] }).ok).toBe(false);
     expect(parseProposal("not an object").ok).toBe(false);
+  });
+
+  test("rejects empty suggestion name or reason", () => {
+    const base = {
+      title: "T",
+      tags: [],
+      correspondent: null,
+      document_type: null,
+      review: false,
+      review_reasons: [],
+      suggested_tags: [],
+      suggested_correspondent: null,
+      suggested_document_type: null,
+    };
+    expect(
+      parseProposal({
+        ...base,
+        suggested_tags: [{ name: " ", reason: "why" }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseProposal({
+        ...base,
+        suggested_correspondent: { name: "X", reason: "" },
+      }).ok,
+    ).toBe(false);
   });
 });
 
 describe("callModel", () => {
   test("parses a valid structured response", async () => {
-    const fixture = await loadFixture("llm/proposal-valid.json");
+    const fixture = await loadFixture("llm/proposal-v2-valid.json");
     const result = await callModel(
       context(async () => jsonResponse(fixture)),
       promptInput,
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.promptVersion).toBe("proposal-v1");
+      expect(result.promptVersion).toBe("proposal-v2");
       expect(result.proposal.title).toBe("Example Statement January 2026");
       expect(result.usage.totalTokens).toBe(120);
     }
@@ -77,7 +116,7 @@ describe("callModel", () => {
 
   test("sends a strict json_schema response_format", async () => {
     let capturedBody = "";
-    const fixture = await loadFixture("llm/proposal-valid.json");
+    const fixture = await loadFixture("llm/proposal-v2-valid.json");
     await callModel(
       context(async (_input, init) => {
         capturedBody = String(init?.body ?? "");
@@ -99,7 +138,7 @@ describe("callModel", () => {
   });
 
   test("returns ok:false for invalid model output", async () => {
-    const fixture = await loadFixture("llm/proposal-invalid.json");
+    const fixture = await loadFixture("llm/proposal-v2-invalid.json");
     const result = await callModel(
       context(async () => jsonResponse(fixture)),
       promptInput,
@@ -107,7 +146,7 @@ describe("callModel", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toContain("validation");
-      expect(result.promptVersion).toBe("proposal-v1");
+      expect(result.promptVersion).toBe("proposal-v2");
     }
   });
 

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_STATE_TAGS } from "../src/config.ts";
 import { type DecisionInput, decideChanges } from "../src/decision.ts";
 import type { Proposal } from "../src/llm.ts";
 import type { StateTagIds } from "../src/metadata.ts";
@@ -30,6 +31,9 @@ const baseProposal: Proposal = {
   documentType: "Example Type",
   review: false,
   reviewReasons: [],
+  suggestedTags: [],
+  suggestedCorrespondent: null,
+  suggestedDocumentType: null,
 };
 
 const input: DecisionInput = {
@@ -40,11 +44,24 @@ const input: DecisionInput = {
       { id: 70, name: "ai-pending" },
       { id: 5, name: "Example Tag" },
       { id: 6, name: "Invoices" },
-      { id: 7, name: "invoices " },
+      { id: 7, name: "Dup" },
+      { id: 8, name: "dup " },
     ],
     correspondents: [{ id: 5, name: "Example Correspondent" }],
     documentTypes: [{ id: 18, name: "Example Type" }],
   },
+  whitelist: {
+    tags: [
+      { name: "Example Tag", aliases: [], description: null },
+      { name: "Invoices", aliases: ["Rechnung"], description: null },
+      { name: "Dup", aliases: [], description: null },
+    ],
+    correspondents: [
+      { name: "Example Correspondent", aliases: [], description: null },
+    ],
+    documentTypes: [{ name: "Example Type", aliases: [], description: null }],
+  },
+  stateTags: DEFAULT_STATE_TAGS,
   stateTagIds,
   overwrite: { title: false, correspondent: false, documentType: false },
   maxTitleLength: 128,
@@ -65,6 +82,16 @@ describe("decideChanges", () => {
       addTagIds: [5],
     });
     expect(decision.reviewReasons).toEqual([]);
+    expect(decision.missing).toEqual([]);
+    expect(decision.requeueable).toBe(false);
+  });
+
+  test("resolves a whitelist alias to its canonical entry", () => {
+    const decision = decideChanges(
+      withInput({ proposal: { ...baseProposal, tags: ["Rechnung"] } }),
+    );
+    expect(decision.outcome).toBe("update");
+    expect(decision.changes.addTagIds).toEqual([6]);
   });
 
   test("preserves existing metadata when overwrite is disabled", () => {
@@ -109,20 +136,80 @@ describe("decideChanges", () => {
     expect(decision.changes.documentTypeId).toBe(18);
   });
 
-  test("routes unknown tag suggestions to review", () => {
+  test("records an unknown tag as a requeueable whitelist gap", () => {
     const decision = decideChanges(
       withInput({ proposal: { ...baseProposal, tags: ["Nonexistent"] } }),
     );
     expect(decision.outcome).toBe("review");
-    expect(decision.reviewReasons[0]).toContain("unknown tag");
+    expect(decision.requeueable).toBe(true);
+    expect(decision.missing).toEqual([
+      {
+        kind: "tag",
+        name: "Nonexistent",
+        reason: "model proposed it but it is not in the whitelist",
+      },
+    ]);
+    expect(decision.reviewReasons[0]).toContain("missing whitelist entries");
   });
 
-  test("routes ambiguous tag suggestions to review", () => {
+  test("records a suggested document type as a requeueable gap", () => {
     const decision = decideChanges(
-      withInput({ proposal: { ...baseProposal, tags: ["invoices"] } }),
+      withInput({
+        proposal: {
+          ...baseProposal,
+          suggestedDocumentType: {
+            name: "Passport",
+            reason: "identity document",
+          },
+        },
+      }),
     );
     expect(decision.outcome).toBe("review");
-    expect(decision.reviewReasons[0]).toContain("ambiguous tag");
+    expect(decision.requeueable).toBe(true);
+    expect(decision.missing).toEqual([
+      { kind: "documentType", name: "Passport", reason: "identity document" },
+    ]);
+  });
+
+  test("deduplicates a tag proposed in both tags and suggestions", () => {
+    const decision = decideChanges(
+      withInput({
+        proposal: {
+          ...baseProposal,
+          tags: ["Passport"],
+          suggestedTags: [{ name: "passport", reason: "identity document" }],
+        },
+      }),
+    );
+    expect(decision.missing.length).toBe(1);
+    expect(decision.missing[0]?.reason).toBe(
+      "model proposed it but it is not in the whitelist",
+    );
+  });
+
+  test("ignores a suggestion that is already whitelisted", () => {
+    const decision = decideChanges(
+      withInput({
+        proposal: {
+          ...baseProposal,
+          suggestedTags: [{ name: "Example Tag", reason: "already there" }],
+        },
+      }),
+    );
+    expect(decision.missing).toEqual([]);
+    expect(decision.notes).toContain(
+      'suggested tag "Example Tag" is already whitelisted',
+    );
+  });
+
+  test("routes ambiguous Paperless tags to non-requeueable review", () => {
+    const decision = decideChanges(
+      withInput({ proposal: { ...baseProposal, tags: ["dup"] } }),
+    );
+    expect(decision.outcome).toBe("review");
+    expect(decision.requeueable).toBe(false);
+    expect(decision.missing).toEqual([]);
+    expect(decision.reviewReasons[0]).toContain("matches multiple Paperless");
   });
 
   test("treats a duplicate tag suggestion as a no-op", () => {
@@ -136,16 +223,18 @@ describe("decideChanges", () => {
     expect(decision.notes).toContain('tag "Example Tag" already present');
   });
 
-  test("never allows a state tag to be selected", () => {
+  test("never allows a state tag to be selected or suggested", () => {
     const decision = decideChanges(
       withInput({ proposal: { ...baseProposal, tags: ["ai-pending"] } }),
     );
     expect(decision.outcome).toBe("review");
     expect(decision.changes.addTagIds).toEqual([]);
-    expect(decision.reviewReasons[0]).toContain("unknown tag");
+    expect(decision.missing).toEqual([]);
+    expect(decision.requeueable).toBe(false);
+    expect(decision.reviewReasons[0]).toContain("worker state tag");
   });
 
-  test("honors the model review decision", () => {
+  test("honors the model review decision as non-requeueable", () => {
     const decision = decideChanges(
       withInput({
         proposal: {
@@ -156,8 +245,24 @@ describe("decideChanges", () => {
       }),
     );
     expect(decision.outcome).toBe("review");
+    expect(decision.requeueable).toBe(false);
     expect(decision.reviewReasons).toContain("model review: unreadable scan");
-    expect(decision.changes.title).toBe("New Title");
+  });
+
+  test("marks a combined uncertainty and gap review as non-requeueable", () => {
+    const decision = decideChanges(
+      withInput({
+        proposal: {
+          ...baseProposal,
+          review: true,
+          reviewReasons: ["unreadable scan"],
+          suggestedTags: [{ name: "Passport", reason: "identity document" }],
+        },
+      }),
+    );
+    expect(decision.outcome).toBe("review");
+    expect(decision.requeueable).toBe(false);
+    expect(decision.missing.length).toBe(1);
   });
 
   test("routes an invalid title to review", () => {
@@ -165,6 +270,7 @@ describe("decideChanges", () => {
       withInput({ proposal: { ...baseProposal, title: "" } }),
     );
     expect(decision.outcome).toBe("review");
+    expect(decision.requeueable).toBe(false);
     expect(decision.reviewReasons[0]).toContain("proposed title rejected");
   });
 

@@ -138,18 +138,29 @@ duplicate-name response remains a live-checkpoint item.
   - Rate-limit headers are present: `x-ratelimit-limit`, `x-ratelimit-remaining`,
     `x-ratelimit-reset`.
 
-### Response contract (prompt `proposal-v1`)
+### Response contract (prompt `proposal-v2`)
 
 ```json
 {
   "title": "string, non-empty",
-  "tags": ["names to add, from the allowed list"],
-  "correspondent": "name from the allowed list, or null",
-  "document_type": "name from the allowed list, or null",
+  "tags": ["names to add, from the allowed whitelist"],
+  "correspondent": "name from the allowed whitelist, or null",
+  "document_type": "name from the allowed whitelist, or null",
   "review": false,
-  "review_reasons": []
+  "review_reasons": [],
+  "suggested_tags": [{ "name": "Passport", "reason": "identifies a passport" }],
+  "suggested_correspondent": { "name": "Consulate", "reason": "issuer" },
+  "suggested_document_type": { "name": "Passport", "reason": "identity document" }
 }
 ```
+
+- `title`, `tags`, `correspondent`, and `document_type` may only reference the
+  offered whitelist values; the application resolves aliases to canonical names.
+- `suggested_tags`, `suggested_correspondent`, and `suggested_document_type`
+  capture values absent from the whitelist. They are never applied; they become
+  `missing` entities in the review artifact.
+- All fields are required. `correspondent`, `document_type`, and each suggestion
+  object may be `null`; the suggestion arrays may be empty.
 
 Numeric confidence is not requested. The application resolves every name to a
 Paperless id and decides whether an update is safe.

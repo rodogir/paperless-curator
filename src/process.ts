@@ -17,12 +17,14 @@ import {
   type PaperlessContext,
 } from "./paperless.ts";
 import { prepareOcr } from "./text.ts";
+import type { Whitelist } from "./whitelist.ts";
 
 export type ProcessDeps = {
   config: AppConfig;
   paperless: PaperlessContext;
   llm: LlmContext;
   vocab: Vocabularies;
+  whitelist: Whitelist;
   stateTagIds: StateTagIds;
   log: Logger;
   /**
@@ -74,7 +76,7 @@ function currentTagNames(
 export async function processOneDocument(
   deps: ProcessDeps,
 ): Promise<ProcessOutcome> {
-  const { config, paperless, llm, vocab, stateTagIds, log } = deps;
+  const { config, paperless, llm, vocab, whitelist, stateTagIds, log } = deps;
 
   let selected: DocumentDetail | null = null;
   let candidateCount = 0;
@@ -141,6 +143,8 @@ export async function processOneDocument(
         addTagIds: [],
       },
       reviewReasons: [`unusable OCR: ${ocr.reason}`],
+      missing: [],
+      requeueable: false,
       notes: [],
     };
     const durationMs = Date.now() - startedAt;
@@ -167,11 +171,9 @@ export async function processOneDocument(
 
   const result = await callModel(llm, {
     ocr: ocr.text,
-    allowedTags: excludeStateTags(vocab.tags, allStateTagIds(stateTagIds)).map(
-      (tag) => tag.name,
-    ),
-    allowedCorrespondents: vocab.correspondents.map((entry) => entry.name),
-    allowedDocumentTypes: vocab.documentTypes.map((entry) => entry.name),
+    allowedTags: whitelist.tags,
+    allowedCorrespondents: whitelist.correspondents,
+    allowedDocumentTypes: whitelist.documentTypes,
     current: {
       title: document.title,
       correspondent:
@@ -209,6 +211,8 @@ export async function processOneDocument(
     document,
     proposal: result.proposal,
     vocab,
+    whitelist,
+    stateTags: config.stateTags,
     stateTagIds,
     overwrite: config.overwrite,
     maxTitleLength: config.limits.maxTitleLength,

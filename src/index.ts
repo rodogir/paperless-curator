@@ -1,4 +1,10 @@
-import { type AppConfig, loadConfig, resolveConfigPath } from "./config.ts";
+import {
+  type AppConfig,
+  loadConfig,
+  resolveConfigPath,
+  resolveDataDir,
+  whitelistPath,
+} from "./config.ts";
 import { type RetryInfo, type RetryPolicy, sleep } from "./http.ts";
 import type { LlmContext } from "./llm.ts";
 import { createLogger, type Logger } from "./logger.ts";
@@ -16,6 +22,7 @@ import {
   type Tag,
 } from "./paperless.ts";
 import { type ProcessOutcome, processOneDocument } from "./process.ts";
+import { loadWhitelist, type Whitelist } from "./whitelist.ts";
 
 function parseArgs(argv: readonly string[]): {
   configPath: string | null;
@@ -264,11 +271,29 @@ async function main(): Promise<number> {
     documentTypeCount: documentTypes.length,
   });
 
+  const dataDir = resolveDataDir(process.env, config);
+  let whitelist: Whitelist;
+  try {
+    whitelist = await loadWhitelist(whitelistPath(dataDir), config.stateTags);
+  } catch (error) {
+    log("error", "whitelist-error", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return 1;
+  }
+  log("info", "whitelist-loaded", {
+    dataDir,
+    tagCount: whitelist.tags.length,
+    correspondentCount: whitelist.correspondents.length,
+    documentTypeCount: whitelist.documentTypes.length,
+  });
+
   const outcome = await processOneDocument({
     config,
     paperless,
     llm,
     vocab: { tags, correspondents, documentTypes },
+    whitelist,
     stateTagIds,
     log,
     targetDocumentId: args.documentId ?? undefined,

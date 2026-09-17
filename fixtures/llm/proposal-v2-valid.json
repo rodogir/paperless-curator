@@ -8,7 +8,7 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"title\":\"Example Statement January 2026\",\"tags\":[\"Example Tag\"],\"correspondent\":\"Example Correspondent\",\"document_type\":\"Example Type\",\"review\":false,\"review_reasons\":[]}"
+        "content": "{\"title\":\"Example Statement January 2026\",\"tags\":[\"Example Tag\"],\"correspondent\":\"Example Correspondent\",\"document_type\":null,\"review\":false,\"review_reasons\":[],\"suggested_tags\":[],\"suggested_correspondent\":null,\"suggested_document_type\":null}"
       }
     }
   ],

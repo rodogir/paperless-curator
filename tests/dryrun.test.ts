@@ -20,7 +20,7 @@ const fixtures = {
   documentTypes: await loadFixture("paperless/document-types-page.json"),
   documents: await loadFixture("paperless/documents-pending.json"),
   detail: await loadFixture("paperless/document-detail.json"),
-  llm: await loadFixture("llm/proposal-valid.json"),
+  llm: await loadFixture("llm/proposal-v2-valid.json"),
 };
 
 const config: AppConfig = {
@@ -95,6 +95,16 @@ describe("dry-run processing", () => {
         ],
         correspondents: [{ id: 5, name: "Example Correspondent" }],
         documentTypes: [{ id: 18, name: "Example Type" }],
+      },
+      whitelist: {
+        version: 1,
+        tags: [{ name: "Example Tag", aliases: [], description: null }],
+        correspondents: [
+          { name: "Example Correspondent", aliases: [], description: null },
+        ],
+        documentTypes: [
+          { name: "Example Type", aliases: [], description: null },
+        ],
       },
       stateTagIds,
       log: createLogger({ sink: () => {} }),

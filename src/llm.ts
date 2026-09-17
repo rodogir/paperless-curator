@@ -7,6 +7,11 @@ import {
 } from "./http.ts";
 import { buildMessages, PROMPT_VERSION, type PromptInput } from "./prompt.ts";
 
+export type Suggestion = {
+  name: string;
+  reason: string;
+};
+
 export type Proposal = {
   title: string;
   tags: string[];
@@ -14,6 +19,9 @@ export type Proposal = {
   documentType: string | null;
   review: boolean;
   reviewReasons: string[];
+  suggestedTags: Suggestion[];
+  suggestedCorrespondent: Suggestion | null;
+  suggestedDocumentType: Suggestion | null;
 };
 
 export type LlmUsage = {
@@ -36,6 +44,26 @@ export type LlmContext = {
   onRetry?: (info: RetryInfo) => void;
 };
 
+const SUGGESTION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["name", "reason"],
+  properties: {
+    name: { type: "string" },
+    reason: { type: "string" },
+  },
+} as const;
+
+const NULLABLE_SUGGESTION_SCHEMA = {
+  type: ["object", "null"],
+  additionalProperties: false,
+  required: ["name", "reason"],
+  properties: {
+    name: { type: "string" },
+    reason: { type: "string" },
+  },
+} as const;
+
 export const PROPOSAL_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -46,6 +74,9 @@ export const PROPOSAL_SCHEMA = {
     "document_type",
     "review",
     "review_reasons",
+    "suggested_tags",
+    "suggested_correspondent",
+    "suggested_document_type",
   ],
   properties: {
     title: { type: "string" },
@@ -54,6 +85,9 @@ export const PROPOSAL_SCHEMA = {
     document_type: { type: ["string", "null"] },
     review: { type: "boolean" },
     review_reasons: { type: "array", items: { type: "string" } },
+    suggested_tags: { type: "array", items: SUGGESTION_SCHEMA },
+    suggested_correspondent: NULLABLE_SUGGESTION_SCHEMA,
+    suggested_document_type: NULLABLE_SUGGESTION_SCHEMA,
   },
 } as const;
 
@@ -90,7 +124,11 @@ function readOptionalString(
   field: string,
   errors: string[],
 ): string | null {
-  if (value === null || value === undefined) {
+  if (value === undefined) {
+    errors.push(`${field} is required`);
+    return null;
+  }
+  if (value === null) {
     return null;
   }
   if (typeof value !== "string") {
@@ -100,8 +138,54 @@ function readOptionalString(
   return value;
 }
 
+function readSuggestion(
+  value: unknown,
+  field: string,
+  errors: string[],
+): Suggestion | null {
+  if (value === null) {
+    return null;
+  }
+  if (!isPlainObject(value)) {
+    errors.push(`${field} must be an object with name and reason, or null`);
+    return null;
+  }
+  const name = typeof value.name === "string" ? value.name.trim() : "";
+  const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+  if (name.length === 0) {
+    errors.push(`${field}.name must be a non-empty string`);
+  }
+  if (reason.length === 0) {
+    errors.push(`${field}.reason must be a non-empty string`);
+  }
+  if (name.length === 0 || reason.length === 0) {
+    return null;
+  }
+  return { name, reason };
+}
+
+function readSuggestionArray(
+  value: unknown,
+  field: string,
+  errors: string[],
+): Suggestion[] {
+  if (!Array.isArray(value)) {
+    errors.push(`${field} must be an array of suggestions`);
+    return [];
+  }
+  const result: Suggestion[] = [];
+  value.forEach((item, index) => {
+    const suggestion = readSuggestion(item, `${field}[${index}]`, errors);
+    if (suggestion !== null) {
+      result.push(suggestion);
+    }
+  });
+  return result;
+}
+
 /**
- * Validates the untrusted model response against the versioned contract.
+ * Validates the untrusted model response against the versioned `proposal-v2`
+ * contract. Missing required fields and empty suggestions are rejected.
  */
 export function parseProposal(raw: unknown): ProposalParse {
   if (!isPlainObject(raw)) {
@@ -132,6 +216,21 @@ export function parseProposal(raw: unknown): ProposalParse {
     "review_reasons",
     errors,
   );
+  const suggestedTags = readSuggestionArray(
+    raw.suggested_tags,
+    "suggested_tags",
+    errors,
+  );
+  const suggestedCorrespondent = readSuggestion(
+    raw.suggested_correspondent,
+    "suggested_correspondent",
+    errors,
+  );
+  const suggestedDocumentType = readSuggestion(
+    raw.suggested_document_type,
+    "suggested_document_type",
+    errors,
+  );
 
   if (errors.length > 0 || title === null || review === null) {
     return { ok: false, errors };
@@ -146,6 +245,9 @@ export function parseProposal(raw: unknown): ProposalParse {
       documentType,
       review,
       reviewReasons,
+      suggestedTags,
+      suggestedCorrespondent,
+      suggestedDocumentType,
     },
   };
 }

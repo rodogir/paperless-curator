@@ -8,7 +8,7 @@
       "finish_reason": "stop",
       "message": {
         "role": "assistant",
-        "content": "{\"title\":\"\",\"tags\":[42],\"correspondent\":null,\"review\":\"yes\"}"
+        "content": "{\"title\":\"\",\"tags\":[42],\"correspondent\":null,\"document_type\":null,\"review\":\"yes\",\"review_reasons\":[],\"suggested_tags\":[{\"name\":\"\",\"reason\":\"\"}],\"suggested_correspondent\":{\"name\":\"X\"},\"suggested_document_type\":null}"
       }
     }
   ],

@@ -18,8 +18,8 @@ Files:
 - `paperless/document-types-page.json` — paginated document types.
 - `paperless/documents-pending.json` — projected document list.
 - `paperless/document-detail.json` — document detail with staged OCR.
-- `llm/proposal-valid.json` — valid chat completion.
-- `llm/proposal-invalid.json` — invalid proposal fields.
+- `llm/proposal-v2-valid.json` — valid `proposal-v2` chat completion.
+- `llm/proposal-v2-invalid.json` — invalid `proposal-v2` fields.
 
 The exact build and behavior these represent are recorded in
 `docs/api-notes.md`.
