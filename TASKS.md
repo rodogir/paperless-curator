@@ -527,29 +527,81 @@ session.
 
 This milestone is optional until the local application is useful and stable.
 
-- [ ] Add a reproducible multi-stage Docker build using a pinned Bun image.
-- [ ] Run the runtime image as a non-root user where practical.
-- [ ] Verify the image exposes no ports and needs only configuration, secrets,
+- [x] Add a reproducible multi-stage Docker build using a pinned Bun image.
+  - Done: `Dockerfile` pins `BUN_VERSION=1.3.13` (`oven/bun:1.3.13-alpine`,
+    the same version as `engines.bun` and CI). The build stage bundles
+    `src/index.ts` with `bun build`; the runtime stage copies only `dist/` and
+    `package.json`.
+- [x] Run the runtime image as a non-root user where practical.
+  - Done: `USER bun` (uid 1000, already present in the pinned base image);
+    `/data` is created and owned by that user.
+- [x] Verify the image exposes no ports and needs only configuration, secrets,
   and network access to Paperless and the LLM endpoint.
-- [ ] Add a documented data-directory volume mount so `whitelist.json`,
+  - Done: `docker image inspect` shows `ExposedPorts=map[]`, `User=bun`,
+    `Volumes=/data`, `StopSignal=SIGTERM`. A container run with a mounted
+    `/data`, dummy env secrets, and an unreachable upstream read
+    `/data/config.json` + `/data/whitelist.json`, made only outbound requests,
+    and exited 0 on SIGTERM.
+- [x] Add a documented data-directory volume mount so `whitelist.json`,
   `review.json`, `review.md`, and `review-log.jsonl` are reachable from the host
   filesystem (Unraid appdata).
-- [ ] Add a simple `devenv.nix` that supplies Bun, Git, Docker CLI, and canonical
+  - Done: image sets `CONFIG_PATH=/data/config.json` and `DATA_DIR=/data` and
+    declares `VOLUME ["/data"]`; README documents the mount, host ownership
+    (uid 1000), and an Unraid appdata example.
+- [x] Add a simple `devenv.nix` that supplies Bun, Git, Docker CLI, and canonical
   project tasks without affecting the production image.
-- [ ] Write a concise README covering local use, configuration, privacy, state
+  - Done: `devenv.nix` adds `pkgs.git` and `pkgs.docker-client` and `pc-*`
+    scripts; verified with `devenv shell` that Bun, Git, Docker, and the scripts
+    resolve. It is development-only and never copied into the image.
+- [x] Write a concise README covering local use, configuration, privacy, state
   tags, dry-run, the whitelist/review workflow, troubleshooting, Docker, and
   Unraid.
+  - Done: `README.md`.
 - [x] Add and maintain an `AGENTS.md` with project constraints and canonical
   commands once the repository structure is established.
-  - Done: added early at user request; see `AGENTS.md`.
-- [ ] Document Conventional Commits in a concise `CONTRIBUTING.md`.
-- [ ] Add GitHub Actions for formatting/checking, types, tests, build, and
+  - Done: added early at user request; updated for M4 packaging rules.
+- [x] Document Conventional Commits in a concise `CONTRIBUTING.md`.
+  - Done: `CONTRIBUTING.md`.
+- [x] Add GitHub Actions for formatting/checking, types, tests, build, and
   optionally a non-publishing Docker build.
-- [ ] Add release-tag publishing for
+  - Done: `.github/workflows/ci.yml` runs `bun run check`, `bun test`, and
+    `bun run build` on the pinned Bun, then a cached non-publishing Docker
+    build. No live services or credentials.
+- [x] Add release-tag publishing for
   `ghcr.io/rodogir/paperless-curator:<version>`.
-- [ ] Publish `latest` only for stable releases and document that Unraid should
+  - Done: `.github/workflows/release.yml` runs on `v*` tags and pushes
+    `{{version}}` and `{{major}}.{{minor}}` tags for `linux/amd64` using
+    `GITHUB_TOKEN` (`packages: write`). Not exercised here; see M4 Verification.
+- [x] Publish `latest` only for stable releases and document that Unraid should
   prefer a versioned tag.
-- [ ] Add release and upgrade notes when a second release makes them useful.
+  - Done: `latest` is enabled only when the tag contains no `-` (stable), and
+    README recommends a versioned tag on Unraid.
+- [-] Add release and upgrade notes when a second release makes them useful.
+  - Deferred: only the initial `0.1.0` release exists. Add changelog/upgrade
+    notes when a second release is cut.
+
+### M4 Verification
+
+- `bun run check` (Biome + `tsc --noEmit`), `bun test` (155 tests across 18
+  files), and `bun run build` all pass.
+- Local image build: `docker build --build-arg BUN_VERSION=1.3.13 -t
+  paperless-curator:m4-test .` succeeded.
+- `docker image inspect` confirms `User=bun`, `ExposedPorts=map[]`,
+  `Volumes=/data`, `StopSignal=SIGTERM`, and no `config*.json`,
+  `whitelist*.json`, or review artifacts exist in the image filesystem.
+- Container smoke test: mounted `/tmp/.../pc-data` at `/data`, passed dummy
+  `PAPERLESS_API_TOKEN`/`LLM_API_KEY`, pointed the config at an unreachable
+  upstream. The worker logged `startup` with `dataDir=/data`, loaded the
+  mounted whitelist, retried with backoff, and exited 0 on SIGTERM. No review
+  files were written because nothing was processed.
+- TLS from the image works (`fetch("https://example.com")` returned 200), so
+  the pinned Alpine image has usable CA certificates.
+- Not verified locally: an actual GHCR publish run. It requires pushing a `v*`
+  tag and repository Actions settings that allow `packages: write` (and, for the
+  first publish, package visibility may need adjusting). To verify: push a
+  version tag, watch the `Release` workflow, and confirm
+  `ghcr.io/rodogir/paperless-curator:0.1.0` (plus `latest`) exists. No
+  dependency is registered in this environment.
 
 ## Deferred Backlog
 

@@ -25,9 +25,11 @@ Read these before changing behavior:
 - `bun run typecheck` — `tsc --noEmit`
 - `bun test` — Bun test runner
 - `bun run build` — bundle to `dist/`
+- `docker build -t paperless-curator:local .` — build the runtime image
 
-Run `bun run check` and `bun test` before reporting work complete. Prefer these
-commands over ad-hoc ones and keep dependency versions pinned.
+Run `bun run check` and `bun test` before reporting work complete. Run
+`bun run build` when the bundle or packaging changes. Prefer these commands over
+ad-hoc ones and keep dependency versions pinned.
 
 ## Commits
 
@@ -57,6 +59,10 @@ commands over ad-hoc ones and keep dependency versions pinned.
   `LLM_API_KEY`). Never print, log, or commit them.
 - `config.json`, `whitelist.json`, and the data directory are git-ignored;
   never commit local config or whitelist files.
+- The `Dockerfile` and `.dockerignore` must never bake `config.json`,
+  `whitelist.json`, `data/`, review artifacts, or secrets into the image.
+  Configuration, whitelist, and data come from a mounted volume; secrets come
+  from environment variables.
 - Never log full OCR text, full prompts, raw upstream responses, or secrets.
 - Review artifacts contain derived personal metadata; treat them as personal
   data and keep them out of the repository.
@@ -70,7 +76,10 @@ commands over ad-hoc ones and keep dependency versions pinned.
 - Validate untrusted API and LLM responses at the boundary.
 - Tests use `bun test` with mocked `fetch`; they must not require live services
   or credentials.
-- Do not add Docker, CI, or deployment infrastructure before milestone M4.
+- Packaging and automation exist from M4 on: keep the image minimal, non-root,
+  free of exposed ports, and free of baked configuration or data. CI stays
+  cheap and independent of live services or credentials; release publishing
+  targets `ghcr.io/rodogir/paperless-curator` and runs only on version tags.
 
 ## Workflow
 
