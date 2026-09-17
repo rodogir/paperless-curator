@@ -1,0 +1,35 @@
+# Never ship version control, local dev environments, or CI metadata.
+.git
+.github
+.devenv
+.devenv.*
+.direnv
+.envrc
+.envrc.local
+devenv.local.nix
+
+# Secrets and local configuration must never be baked into the image.
+.env
+.env.*
+!.env.example
+config.json
+config.local.json
+config.*.local.json
+
+# Human-curated whitelist and worker review artifacts (derived personal data).
+data/
+whitelist.json
+review.json
+review.md
+review-log.jsonl
+
+# Build output and dependencies are reproduced inside the build stage.
+node_modules
+dist
+
+# Repository documentation and tests are not needed at runtime.
+docs
+fixtures
+tests
+*.md
+LICENSE
