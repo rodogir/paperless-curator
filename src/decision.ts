@@ -1,9 +1,3 @@
-import type {
-  DocumentDetail,
-  Correspondent,
-  DocumentType,
-  Tag,
-} from "./paperless.ts";
 import type { Proposal } from "./llm.ts";
 import {
   allStateTagIds,
@@ -12,6 +6,12 @@ import {
   resolveName,
   type StateTagIds,
 } from "./metadata.ts";
+import type {
+  Correspondent,
+  DocumentDetail,
+  DocumentType,
+  Tag,
+} from "./paperless.ts";
 import { isBlank, isPresent, validateTitle } from "./text.ts";
 
 export type Vocabularies = {

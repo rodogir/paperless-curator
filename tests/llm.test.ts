@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { UpstreamError } from "../src/errors.ts";
 import {
   callModel,
-  parseProposal,
-  PROPOSAL_SCHEMA,
   type LlmContext,
+  PROPOSAL_SCHEMA,
+  parseProposal,
 } from "../src/llm.ts";
-import { UpstreamError } from "../src/errors.ts";
-import { jsonResponse, loadFixture } from "./helpers.ts";
 import type { PromptInput } from "../src/prompt.ts";
+import { jsonResponse, loadFixture } from "./helpers.ts";
 
 const promptInput: PromptInput = {
   ocr: "synthetic OCR text",

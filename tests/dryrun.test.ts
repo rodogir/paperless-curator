@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_STATE_TAGS, type AppConfig } from "../src/config.ts";
-import { processOneDocument, type ProcessDeps } from "../src/process.ts";
+import { type AppConfig, DEFAULT_STATE_TAGS } from "../src/config.ts";
 import { createLogger } from "../src/logger.ts";
 import type { StateTagIds } from "../src/metadata.ts";
+import { type ProcessDeps, processOneDocument } from "../src/process.ts";
 import { jsonResponse, loadFixture } from "./helpers.ts";
 
 const stateTagIds: StateTagIds = {

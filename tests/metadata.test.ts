@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_STATE_TAGS } from "../src/config.ts";
 import {
   excludeStateTags,
+  type NamedEntity,
   normalizeName,
   resolveName,
   resolveStateTags,
-  type NamedEntity,
 } from "../src/metadata.ts";
-import { DEFAULT_STATE_TAGS } from "../src/config.ts";
 
 const tags: NamedEntity[] = [
   { id: 1, name: "Invoices" },

@@ -1,6 +1,7 @@
-import { loadConfig, resolveConfigPath, type AppConfig } from "./config.ts";
+import { type AppConfig, loadConfig, resolveConfigPath } from "./config.ts";
+import { type RetryInfo, type RetryPolicy, sleep } from "./http.ts";
+import type { LlmContext } from "./llm.ts";
 import { createLogger, type Logger } from "./logger.ts";
-import { sleep, type RetryInfo, type RetryPolicy } from "./http.ts";
 import type { StateTagIds } from "./metadata.ts";
 import {
   allStateTagIds,
@@ -14,8 +15,7 @@ import {
   type PaperlessContext,
   type Tag,
 } from "./paperless.ts";
-import { processOneDocument, type ProcessOutcome } from "./process.ts";
-import type { LlmContext } from "./llm.ts";
+import { type ProcessOutcome, processOneDocument } from "./process.ts";
 
 function parseArgs(argv: readonly string[]): {
   configPath: string | null;

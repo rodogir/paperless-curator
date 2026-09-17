@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { decideChanges, type DecisionInput } from "../src/decision.ts";
+import { type DecisionInput, decideChanges } from "../src/decision.ts";
 import type { Proposal } from "../src/llm.ts";
-import type { DocumentDetail } from "../src/paperless.ts";
 import type { StateTagIds } from "../src/metadata.ts";
+import type { DocumentDetail } from "../src/paperless.ts";
 
 const stateTagIds: StateTagIds = {
   pending: 70,

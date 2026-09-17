@@ -3,8 +3,8 @@ import {
   DEFAULT_LIMITS,
   DEFAULT_REQUEST,
   DEFAULT_STATE_TAGS,
-  parseConfig,
   PAPERLESS_TITLE_MAX_LENGTH,
+  parseConfig,
 } from "../src/config.ts";
 
 const minimal = {

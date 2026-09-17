@@ -1,9 +1,9 @@
 import { UpstreamError } from "./errors.ts";
 import {
-  requestJson,
   type FetchLike,
   type RetryInfo,
   type RetryPolicy,
+  requestJson,
 } from "./http.ts";
 import type { NamedEntity, StateTagIds } from "./metadata.ts";
 

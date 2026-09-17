@@ -27,8 +27,9 @@ session.
   - Add only dependencies justified by immediate MVP functionality.
   - Verify a trivial build and `bun test` run locally.
   - Done: `package.json` defines `dev`, `format`, `check`, `typecheck`, `test`,
-    and `build`. Pinned devDependencies: `typescript@7.0.2`,
-    `@types/bun@1.4.2`, `prettier@3.9.7`. No runtime dependencies. `engines.bun`
+    and `build`, plus `lint`. Pinned devDependencies: `typescript@7.0.2`,
+    `@types/bun@1.4.2`, `@biomejs/biome@2.5.14`. No runtime dependencies.
+    `engines.bun`
     pins `>=1.3.13`. `bun run build`, `bun test`, and `tsc --noEmit` all pass.
 - [x] Add a versioned example configuration and a local ignored configuration
   path.
@@ -101,7 +102,7 @@ session.
 ### M0 Verification
 
 - [x] Run the canonical checks and tests.
-  - Done: `bun run check` (prettier + `tsc --noEmit`), `bun test` (57 tests),
+  - Done: `bun run check` (Biome + `tsc --noEmit`), `bun test` (57 tests),
     `bun run build`.
 - [x] Verify no secret, real OCR text, or personal document data is tracked.
   - Done: fixtures use fictional data and placeholders; `config.json` and

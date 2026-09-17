@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { requestJson, type FetchLike, type RetryInfo } from "../src/http.ts";
+import { type FetchLike, type RetryInfo, requestJson } from "../src/http.ts";
 import { jsonResponse } from "./helpers.ts";
 
 const baseOptions = {

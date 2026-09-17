@@ -1,9 +1,9 @@
 import { UpstreamError } from "./errors.ts";
 import {
-  requestJson,
   type FetchLike,
   type RetryInfo,
   type RetryPolicy,
+  requestJson,
 } from "./http.ts";
 import { buildMessages, PROMPT_VERSION, type PromptInput } from "./prompt.ts";
 
@@ -58,7 +58,8 @@ export const PROPOSAL_SCHEMA = {
 } as const;
 
 type ProposalParse =
-  { ok: true; value: Proposal } | { ok: false; errors: string[] };
+  | { ok: true; value: Proposal }
+  | { ok: false; errors: string[] };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

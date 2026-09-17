@@ -1,19 +1,19 @@
 import type { AppConfig } from "./config.ts";
-import { decideChanges, type Decision, type Vocabularies } from "./decision.ts";
-import type { Logger } from "./logger.ts";
+import { type Decision, decideChanges, type Vocabularies } from "./decision.ts";
 import {
   callModel,
   type LlmContext,
   type LlmUsage,
   type Proposal,
 } from "./llm.ts";
+import type { Logger } from "./logger.ts";
 import type { StateTagIds } from "./metadata.ts";
 import { allStateTagIds, excludeStateTags } from "./metadata.ts";
 import {
   checkEligibility,
+  type DocumentDetail,
   getDocument,
   listPendingDocuments,
-  type DocumentDetail,
   type PaperlessContext,
 } from "./paperless.ts";
 import { prepareOcr } from "./text.ts";

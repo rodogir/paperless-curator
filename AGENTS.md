@@ -19,8 +19,9 @@ Read these before changing behavior:
 ## Canonical commands
 
 - `bun run dev` / `bun run start` — run the worker
-- `bun run format` — write formatting with Prettier
-- `bun run check` — Prettier check plus `tsc --noEmit`
+- `bun run format` — write formatting with Biome
+- `bun run lint` — lint with Biome
+- `bun run check` — Biome check (format, lint, import order) plus `tsc --noEmit`
 - `bun run typecheck` — `tsc --noEmit`
 - `bun test` — Bun test runner
 - `bun run build` — bundle to `dist/`

@@ -46,10 +46,17 @@ export function prepareOcr(content: string, maxChars: number): OcrPreparation {
 }
 
 export type TitleValidation =
-  { ok: true; title: string } | { ok: false; reason: string };
+  | { ok: true; title: string }
+  | { ok: false; reason: string };
 
 function hasControlCharacters(value: string): boolean {
-  return /[\u0000-\u001f\u007f]/.test(value);
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code <= 0x1f || code === 0x7f) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

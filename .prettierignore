@@ -1,8 +1,0 @@
-node_modules
-dist
-coverage
-.devenv
-.direnv
-LICENSE
-bun.lock
-*.md
