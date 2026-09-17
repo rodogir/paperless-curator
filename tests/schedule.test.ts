@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { serviceBackoffDelay } from "../src/runner.ts";
+import { abortableSleep, serviceBackoffDelay } from "../src/runner.ts";
 
 describe("serviceBackoffDelay", () => {
   test("doubles the initial delay and caps it", () => {
@@ -12,5 +12,24 @@ describe("serviceBackoffDelay", () => {
 
   test("never returns a negative delay", () => {
     expect(serviceBackoffDelay(-5, 500, 60_000)).toBe(500);
+  });
+});
+
+describe("abortableSleep", () => {
+  test("resolves early when aborted", async () => {
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const pending = abortableSleep(5_000, controller.signal);
+    controller.abort();
+    await pending;
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
+  test("resolves immediately when already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const startedAt = Date.now();
+    await abortableSleep(5_000, controller.signal);
+    expect(Date.now() - startedAt).toBeLessThan(100);
   });
 });
