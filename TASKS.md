@@ -487,7 +487,7 @@ session.
     retry info. No secrets, OCR, full prompts, or raw payloads are logged.
 - [x] Run the focused critical test suite and add only tests motivated by real
   failure risks found during M1 and M2.
-  - Done: 153 tests / 18 files. New coverage: loop timing, no overlap, capped
+  - Done: 155 tests / 18 files. New coverage: loop timing, no overlap, capped
     service backoff, refresh failure blocking, graceful shutdown, stale
     recovery idempotency and dry-run, and rate-limited logging.
 - [x] Run the worker locally for an extended trial and document operational
@@ -501,7 +501,7 @@ session.
 
 ### M3 Verification
 
-- [x] `bun run check` (Biome + `tsc --noEmit`), `bun test` (153 tests across 18
+- [x] `bun run check` (Biome + `tsc --noEmit`), `bun test` (155 tests across 18
   files), and `bun run build` all pass.
 - [x] Document 10 was not classified. Both real trials used `--document-id 34`,
   a terminal document, so no pending document was ever selected and no OCR was
