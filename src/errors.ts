@@ -34,3 +34,18 @@ export function classifyStatus(status: number): ErrorCategory {
   }
   return "permanent";
 }
+
+/**
+ * Categories for structured logs. `unknown` means the error did not come from
+ * a validated upstream boundary (for example a local programming error) and is
+ * therefore not safe to retry indefinitely.
+ */
+export type LoggedErrorCategory = ErrorCategory | "unknown";
+
+export function errorCategory(error: unknown): LoggedErrorCategory {
+  return isUpstreamError(error) ? error.category : "unknown";
+}
+
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

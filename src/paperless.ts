@@ -259,6 +259,47 @@ export function listPendingDocuments(
   });
 }
 
+export type DocumentWithTimestamp = {
+  id: number;
+  tags: number[];
+  modified: string;
+};
+
+function parseDocumentWithTimestamp(value: unknown): DocumentWithTimestamp {
+  if (!isPlainObject(value)) {
+    throw new UpstreamError("document entry is not an object", {
+      category: "permanent",
+      source: "paperless",
+    });
+  }
+  const id = asInt(value.id);
+  if (id === null) {
+    throw new UpstreamError("document entry missing id", {
+      category: "permanent",
+      source: "paperless",
+    });
+  }
+  const tags = Array.isArray(value.tags)
+    ? value.tags.map((tag) => asInt(tag) ?? -1).filter((tag) => tag >= 0)
+    : [];
+  return { id, tags, modified: asString(value.modified) ?? "" };
+}
+
+/**
+ * Lists documents carrying the given tag id together with their `modified`
+ * timestamp. Used by stale-processing recovery. Read-only.
+ */
+export function listDocumentsWithTag(
+  ctx: PaperlessContext,
+  tagId: number,
+): Promise<DocumentWithTimestamp[]> {
+  return listAll(ctx, "/api/documents/", parseDocumentWithTimestamp, {
+    tags__id__all: tagId,
+    ordering: "id",
+    fields: "id,tags,modified",
+  });
+}
+
 function parseDocumentDetail(value: unknown): DocumentDetail {
   const summary = parseDocumentSummary(value);
   const content = isPlainObject(value) ? asString(value.content) : null;

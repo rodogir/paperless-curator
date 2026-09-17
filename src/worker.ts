@@ -5,6 +5,7 @@ import {
   type ProposedChanges,
   type Vocabularies,
 } from "./decision.ts";
+import { errorCategory, errorMessage } from "./errors.ts";
 import type { LlmContext, Proposal } from "./llm.ts";
 import type { Logger } from "./logger.ts";
 import { allStateTagIds, type StateTagIds } from "./metadata.ts";
@@ -33,6 +34,7 @@ import {
   renderReviewMarkdown,
   upsertReviewRecord,
 } from "./review.ts";
+import { recoverStaleProcessing, type StaleRecoveryOutcome } from "./stale.ts";
 import { buildDocumentUpdate, type StateRole } from "./state.ts";
 import { isBlank } from "./text.ts";
 import type { Whitelist } from "./whitelist.ts";
@@ -79,14 +81,11 @@ export type CycleResult = {
   classification: Classification | null;
   created: ReconcileOutcome[];
   requeues: RequeueResult[];
+  staleRecoveries: StaleRecoveryOutcome[];
 };
 
 function nowIsoOf(now: () => Date): string {
   return now().toISOString();
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function nameMaps(vocab: Vocabularies): {
@@ -193,7 +192,18 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
     return next;
   };
 
-  // 1. Requeue reviewed documents whose whitelist gaps are now filled.
+  // 1. Recover documents stranded in ai-processing past the threshold. Live
+  // mode only; idempotent; preserves all non-state tags.
+  const staleRecoveries = await recoverStaleProcessing({
+    paperless,
+    dryRun: config.dryRun,
+    stateTagIds: deps.stateTagIds,
+    thresholdMs: config.operations.staleProcessingThresholdMs,
+    nowMs: now().getTime(),
+    log,
+  });
+
+  // 2. Requeue reviewed documents whose whitelist gaps are now filled.
   const requeues: RequeueResult[] = [];
   const requeueDecisions = decideRequeues({
     store,
@@ -236,6 +246,7 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
       requeues.push({ documentId: decision.documentId, action: "failed" });
       log("error", "review-requeue-failed", {
         documentId: decision.documentId,
+        errorCategory: errorCategory(error),
         message: errorMessage(error),
       });
     }
@@ -244,6 +255,21 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
   if (requeues.some((entry) => entry.action === "requeued")) {
     await deps.artifacts.saveMarkdown(renderReviewMarkdown(store));
   }
+
+  const makeResult = (
+    outcome: CycleOutcome,
+    documentId: number | null,
+    decision: Decision | null,
+    classification: Classification | null,
+  ): CycleResult => ({
+    outcome,
+    documentId,
+    decision,
+    classification,
+    created: reconciliation.outcomes,
+    requeues,
+    staleRecoveries,
+  });
 
   const processDeps: ProcessDeps = {
     config,
@@ -256,7 +282,7 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
     targetDocumentId: deps.targetDocumentId,
   };
 
-  // 2. Select one eligible document.
+  // 3. Select one eligible document.
   const { document, candidateCount } = await findEligibleDocument(processDeps);
   if (document === null) {
     log("info", "no-eligible-document", {
@@ -264,17 +290,10 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
       candidateCount,
       dryRun: config.dryRun,
     });
-    return {
-      outcome: "no-candidate",
-      documentId: null,
-      decision: null,
-      classification: null,
-      created: reconciliation.outcomes,
-      requeues,
-    };
+    return makeResult("no-candidate", null, null, null);
   }
 
-  // 3. Claim the document. A failed claim makes no model request.
+  // 4. Claim the document. A failed claim makes no model request.
   if (!config.dryRun) {
     const claim = buildDocumentUpdate({
       currentTags: document.tags,
@@ -289,41 +308,29 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
       } catch (error) {
         log("error", "document-claim-failed", {
           documentId: document.id,
+          errorCategory: errorCategory(error),
           message: errorMessage(error),
         });
-        return {
-          outcome: "claim-failed",
-          documentId: document.id,
-          decision: null,
-          classification: null,
-          created: reconciliation.outcomes,
-          requeues,
-        };
+        return makeResult("claim-failed", document.id, null, null);
       }
     }
   }
 
-  // 4. Classify.
+  // 5. Classify.
   let classification: Classification;
   try {
     classification = await classifyDocument(processDeps, document);
   } catch (error) {
     log("error", "document-processing-failed", {
       documentId: document.id,
+      errorCategory: errorCategory(error),
       message: errorMessage(error),
       dryRun: config.dryRun,
     });
     if (!config.dryRun) {
       await applyFinalState(deps, document, "failed", document.tags);
     }
-    return {
-      outcome: "failed",
-      documentId: document.id,
-      decision: null,
-      classification: null,
-      created: reconciliation.outcomes,
-      requeues,
-    };
+    return makeResult("failed", document.id, null, null);
   }
 
   if (classification.kind === "model-invalid") {
@@ -341,14 +348,7 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
       store = await recordReview(document, null, decision, "review");
       await applyFinalState(deps, document, "review", document.tags);
     }
-    return {
-      outcome: "model-invalid",
-      documentId: document.id,
-      decision,
-      classification,
-      created: reconciliation.outcomes,
-      requeues,
-    };
+    return makeResult("model-invalid", document.id, decision, classification);
   }
 
   const decision = classification.decision;
@@ -370,17 +370,10 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
       );
       await applyFinalState(deps, document, "review", document.tags);
     }
-    return {
-      outcome: "review",
-      documentId: document.id,
-      decision,
-      classification,
-      created: reconciliation.outcomes,
-      requeues,
-    };
+    return makeResult("review", document.id, decision, classification);
   }
 
-  // 5. Apply a successful or no-op outcome.
+  // 6. Apply a successful or no-op outcome.
   if (config.dryRun) {
     log("info", decision.outcome === "update" ? "proposed-update" : "noop", {
       documentId: document.id,
@@ -388,14 +381,12 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
       notes: decision.notes,
       dryRun: true,
     });
-    return {
-      outcome: decision.outcome === "update" ? "updated" : "noop",
-      documentId: document.id,
+    return makeResult(
+      decision.outcome === "update" ? "updated" : "noop",
+      document.id,
       decision,
       classification,
-      created: reconciliation.outcomes,
-      requeues,
-    };
+    );
   }
 
   const fresh = await getDocument(paperless, document.id);
@@ -422,14 +413,7 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
       "review",
     );
     await applyFinalState(deps, fresh, "review", fresh.tags);
-    return {
-      outcome: "review",
-      documentId: fresh.id,
-      decision: finalDecision,
-      classification,
-      created: reconciliation.outcomes,
-      requeues,
-    };
+    return makeResult("review", fresh.id, finalDecision, classification);
   }
 
   const patch = buildDocumentUpdate({
@@ -459,18 +443,12 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
   } catch (error) {
     log("error", "document-update-failed", {
       documentId: fresh.id,
+      errorCategory: errorCategory(error),
       message: errorMessage(error),
       action:
         "re-fetch and retry on the next poll; metadata and state are idempotent",
     });
-    return {
-      outcome: "failed",
-      documentId: fresh.id,
-      decision: freshDecision,
-      classification,
-      created: reconciliation.outcomes,
-      requeues,
-    };
+    return makeResult("failed", fresh.id, freshDecision, classification);
   }
 
   const existingRecord = store.documents[String(fresh.id)];
@@ -480,14 +458,12 @@ export async function runCycle(deps: RunDeps): Promise<CycleResult> {
     await deps.artifacts.saveMarkdown(renderReviewMarkdown(store));
   }
 
-  return {
-    outcome: freshDecision.outcome === "update" ? "updated" : "noop",
-    documentId: fresh.id,
-    decision: freshDecision,
+  return makeResult(
+    freshDecision.outcome === "update" ? "updated" : "noop",
+    fresh.id,
+    freshDecision,
     classification,
-    created: reconciliation.outcomes,
-    requeues,
-  };
+  );
 }
 
 function recomputeDecision(
@@ -536,6 +512,7 @@ async function applyFinalState(
     deps.log("error", "state-transition-failed", {
       documentId: document.id,
       state,
+      errorCategory: errorCategory(error),
       message: errorMessage(error),
     });
   }
