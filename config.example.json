@@ -29,5 +29,14 @@
     "maxRetries": 2,
     "retryBackoffMs": 1000
   },
+  "operations": {
+    "pollIntervalMs": 60000,
+    "vocabularyRefreshMs": 900000,
+    "staleProcessingThresholdMs": 900000,
+    "backoff": {
+      "initialMs": 1000,
+      "maxMs": 60000
+    }
+  },
   "dataDir": "./data"
 }

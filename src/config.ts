@@ -8,6 +8,27 @@ export type StateTagConfig = {
   failed: string;
 };
 
+export type ServiceBackoffConfig = {
+  /** First service-connectivity retry delay. */
+  initialMs: number;
+  /** Hard cap for service-connectivity retry delays. */
+  maxMs: number;
+};
+
+export type OperationsConfig = {
+  /** Delay between successful one-document cycles. */
+  pollIntervalMs: number;
+  /** How often to re-read the whitelist and re-list Paperless vocabularies. */
+  vocabularyRefreshMs: number;
+  /**
+   * A document still in the processing state whose `modified` timestamp is
+   * older than this is recovered back to pending (live mode only).
+   */
+  staleProcessingThresholdMs: number;
+  /** Indefinite service-connectivity retry backoff. */
+  backoff: ServiceBackoffConfig;
+};
+
 export type AppConfig = {
   version: typeof CONFIG_VERSION;
   paperless: { baseUrl: string };
@@ -21,6 +42,7 @@ export type AppConfig = {
   };
   limits: { maxTitleLength: number; maxOcrChars: number };
   request: { timeoutMs: number; maxRetries: number; retryBackoffMs: number };
+  operations: OperationsConfig;
   dataDir: string;
 };
 
@@ -51,6 +73,24 @@ export const DEFAULT_REQUEST = {
   timeoutMs: 30_000,
   maxRetries: 2,
   retryBackoffMs: 1_000,
+};
+
+/**
+ * Operational defaults from PLAN.md. Bounded per-request retries live in
+ * `request`; service-connectivity retries are separate and may continue
+ * indefinitely with backoff capped by `backoff.maxMs`.
+ *
+ * The stale threshold (15 minutes) is deliberately far larger than the bounded
+ * worst case of one claimed document: at most a few requests, each with a 30s
+ * hard timeout plus two retries, plus model latency observed up to ~66s. It
+ * also exceeds the default poll and refresh intervals so a healthy worker can
+ * never see its own active document as stale.
+ */
+export const DEFAULT_OPERATIONS: OperationsConfig = {
+  pollIntervalMs: 60_000,
+  vocabularyRefreshMs: 15 * 60_000,
+  staleProcessingThresholdMs: 15 * 60_000,
+  backoff: { initialMs: 1_000, maxMs: 60_000 },
 };
 
 export function configErrorMessage(path: string, detail: string): string {
@@ -218,6 +258,11 @@ export function parseConfig(raw: unknown): AppConfig {
   const overwrite = optionalObject(root.overwrite, "config.overwrite");
   const limits = optionalObject(root.limits, "config.limits");
   const request = optionalObject(root.request, "config.request");
+  const operations = optionalObject(root.operations, "config.operations");
+  const backoff = optionalObject(
+    operations.backoff,
+    "config.operations.backoff",
+  );
 
   const config: AppConfig = {
     version: CONFIG_VERSION,
@@ -280,9 +325,59 @@ export function parseConfig(raw: unknown): AppConfig {
         max: 60_000,
       }),
     },
+    operations: {
+      pollIntervalMs: readInt(
+        operations,
+        "pollIntervalMs",
+        "config.operations",
+        {
+          fallback: DEFAULT_OPERATIONS.pollIntervalMs,
+          min: 1_000,
+          max: 3_600_000,
+        },
+      ),
+      vocabularyRefreshMs: readInt(
+        operations,
+        "vocabularyRefreshMs",
+        "config.operations",
+        {
+          fallback: DEFAULT_OPERATIONS.vocabularyRefreshMs,
+          min: 10_000,
+          max: 86_400_000,
+        },
+      ),
+      staleProcessingThresholdMs: readInt(
+        operations,
+        "staleProcessingThresholdMs",
+        "config.operations",
+        {
+          fallback: DEFAULT_OPERATIONS.staleProcessingThresholdMs,
+          min: 60_000,
+          max: 86_400_000,
+        },
+      ),
+      backoff: {
+        initialMs: readInt(backoff, "initialMs", "config.operations.backoff", {
+          fallback: DEFAULT_OPERATIONS.backoff.initialMs,
+          min: 100,
+          max: 60_000,
+        }),
+        maxMs: readInt(backoff, "maxMs", "config.operations.backoff", {
+          fallback: DEFAULT_OPERATIONS.backoff.maxMs,
+          min: 1_000,
+          max: 600_000,
+        }),
+      },
+    },
     dataDir: readString(root, "dataDir", "config", DEFAULT_DATA_DIR),
   };
 
+  if (config.operations.backoff.maxMs < config.operations.backoff.initialMs) {
+    fail(
+      "config.operations.backoff.maxMs",
+      "must be greater than or equal to backoff.initialMs",
+    );
+  }
   if (config.llm.model.trim().length === 0) {
     fail("config.llm.model", "must not be empty");
   }

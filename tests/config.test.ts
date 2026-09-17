@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_DATA_DIR,
   DEFAULT_LIMITS,
+  DEFAULT_OPERATIONS,
   DEFAULT_REQUEST,
   DEFAULT_STATE_TAGS,
   PAPERLESS_TITLE_MAX_LENGTH,
@@ -28,8 +29,57 @@ describe("parseConfig", () => {
     expect(config.stateTags).toEqual(DEFAULT_STATE_TAGS);
     expect(config.limits).toEqual(DEFAULT_LIMITS);
     expect(config.request).toEqual(DEFAULT_REQUEST);
+    expect(config.operations).toEqual(DEFAULT_OPERATIONS);
     expect(config.limits.maxTitleLength).toBe(PAPERLESS_TITLE_MAX_LENGTH);
     expect(config.dataDir).toBe(DEFAULT_DATA_DIR);
+  });
+
+  test("keeps version 1 backwards compatible without an operations block", () => {
+    const config = parseConfig({ ...minimal, version: 1 });
+    expect(config.operations.pollIntervalMs).toBe(60_000);
+    expect(config.operations.vocabularyRefreshMs).toBe(900_000);
+    expect(config.operations.staleProcessingThresholdMs).toBe(900_000);
+    expect(config.operations.backoff).toEqual({
+      initialMs: 1_000,
+      maxMs: 60_000,
+    });
+  });
+
+  test("accepts explicit operational overrides", () => {
+    const config = parseConfig({
+      ...minimal,
+      operations: {
+        pollIntervalMs: 5_000,
+        vocabularyRefreshMs: 120_000,
+        staleProcessingThresholdMs: 300_000,
+        backoff: { initialMs: 500, maxMs: 30_000 },
+      },
+    });
+    expect(config.operations.pollIntervalMs).toBe(5_000);
+    expect(config.operations.vocabularyRefreshMs).toBe(120_000);
+    expect(config.operations.staleProcessingThresholdMs).toBe(300_000);
+    expect(config.operations.backoff).toEqual({
+      initialMs: 500,
+      maxMs: 30_000,
+    });
+  });
+
+  test("rejects a stale threshold below one minute", () => {
+    expect(() =>
+      parseConfig({
+        ...minimal,
+        operations: { staleProcessingThresholdMs: 1_000 },
+      }),
+    ).toThrow(/config\.operations\.staleProcessingThresholdMs/);
+  });
+
+  test("rejects a service backoff cap below its initial delay", () => {
+    expect(() =>
+      parseConfig({
+        ...minimal,
+        operations: { backoff: { initialMs: 5_000, maxMs: 1_000 } },
+      }),
+    ).toThrow(/config\.operations\.backoff\.maxMs/);
   });
 
   test("accepts a configured data directory", () => {

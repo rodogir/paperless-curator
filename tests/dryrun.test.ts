@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { type AppConfig, DEFAULT_STATE_TAGS } from "../src/config.ts";
+import {
+  type AppConfig,
+  DEFAULT_OPERATIONS,
+  DEFAULT_STATE_TAGS,
+} from "../src/config.ts";
 import { createLogger } from "../src/logger.ts";
 import type { StateTagIds } from "../src/metadata.ts";
 import { type ProcessDeps, processOneDocument } from "../src/process.ts";
@@ -32,6 +36,7 @@ const config: AppConfig = {
   overwrite: { title: false, correspondent: false, documentType: false },
   limits: { maxTitleLength: 128, maxOcrChars: 30000 },
   request: { timeoutMs: 1000, maxRetries: 0, retryBackoffMs: 1 },
+  operations: DEFAULT_OPERATIONS,
   dataDir: "./data",
 };
 
