@@ -117,7 +117,7 @@ function summarizeCycle(
   };
 }
 
-const HELP = `paperless-curator (M3: operational minimum)
+const HELP = `paperless-curator (M4: packaging and distribution)
 
 Usage:
   bun run src/index.ts [--config <path>] [--document-id <id>] [--live] [--once]
