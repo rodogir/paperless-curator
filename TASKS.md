@@ -411,8 +411,9 @@ This milestone is optional until the local application is useful and stable.
 - [ ] Write a concise README covering local use, configuration, privacy, state
   tags, dry-run, the whitelist/review workflow, troubleshooting, Docker, and
   Unraid.
-- [ ] Add and maintain an `AGENTS.md` with project constraints and canonical
+- [x] Add and maintain an `AGENTS.md` with project constraints and canonical
   commands once the repository structure is established.
+  - Done: added early at user request; see `AGENTS.md`.
 - [ ] Document Conventional Commits in a concise `CONTRIBUTING.md`.
 - [ ] Add GitHub Actions for formatting/checking, types, tests, build, and
   optionally a non-publishing Docker build.
