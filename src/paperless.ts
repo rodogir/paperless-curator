@@ -83,6 +83,24 @@ async function getJson(ctx: PaperlessContext, url: string): Promise<unknown> {
   });
 }
 
+async function postJson(
+  ctx: PaperlessContext,
+  url: string,
+  body: unknown,
+): Promise<unknown> {
+  return requestJson({
+    source: "paperless",
+    url,
+    method: "POST",
+    headers: { ...headers(ctx), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    fetchImpl: ctx.fetchImpl,
+    retry: ctx.retry,
+    sleep: ctx.sleep,
+    onRetry: ctx.onRetry,
+  });
+}
+
 export async function getStatus(
   ctx: PaperlessContext,
 ): Promise<{ version: string }> {
@@ -164,6 +182,36 @@ export function listDocumentTypes(
   ctx: PaperlessContext,
 ): Promise<DocumentType[]> {
   return listAll(ctx, "/api/document_types/", parseNamedEntity);
+}
+
+async function createNamedEntity(
+  ctx: PaperlessContext,
+  path: string,
+  name: string,
+): Promise<NamedEntity> {
+  const raw = await postJson(ctx, buildUrl(ctx.baseUrl, path), { name });
+  return parseNamedEntity(raw);
+}
+
+/** Creates a tag. Only call for names present in the human-curated whitelist. */
+export function createTag(ctx: PaperlessContext, name: string): Promise<Tag> {
+  return createNamedEntity(ctx, "/api/tags/", name);
+}
+
+/** Creates a correspondent. Only call for whitelisted names. */
+export function createCorrespondent(
+  ctx: PaperlessContext,
+  name: string,
+): Promise<Correspondent> {
+  return createNamedEntity(ctx, "/api/correspondents/", name);
+}
+
+/** Creates a document type. Only call for whitelisted names. */
+export function createDocumentType(
+  ctx: PaperlessContext,
+  name: string,
+): Promise<DocumentType> {
+  return createNamedEntity(ctx, "/api/document_types/", name);
 }
 
 function parseDocumentSummary(value: unknown): DocumentSummary {

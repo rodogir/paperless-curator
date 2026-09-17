@@ -1,4 +1,9 @@
 import { expect } from "bun:test";
+import type { Vocabularies } from "../src/decision.ts";
+
+export function emptyVocab(): Vocabularies {
+  return { tags: [], correspondents: [], documentTypes: [] };
+}
 
 export function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
