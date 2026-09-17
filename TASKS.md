@@ -434,29 +434,94 @@ session.
 
 ## M3: Operational Minimum
 
-Do not expand these tasks until M2 feedback establishes the necessary behavior.
-
-- [ ] Add continuous polling with the configured interval and one-document
+- [x] Add continuous polling with the configured interval and one-document
   processing.
-- [ ] Add graceful shutdown that stops polling and lets the active bounded
+  - Done: `src/runner.ts` (`runWorkerLoop`); `runCycle` stays reusable and
+    injectable. `tests/runner.test.ts` proves cycles never overlap and each
+    iteration sleeps a positive interval. Commit `e321337`.
+- [x] Add graceful shutdown that stops polling and lets the active bounded
   operation finish or abort safely.
-- [ ] Add periodic vocabulary refresh and continuous whitelist reconciliation
+  - Done: `abortableSleep` plus an `AbortController` wired to `SIGINT`/`SIGTERM`
+    in `src/index.ts`. Tests prove the loop stops after the active cycle,
+    interrupts the poll sleep, and does not sleep after a mid-cycle abort.
+- [x] Add periodic vocabulary refresh and continuous whitelist reconciliation
   (reconciliation and requeue logic exist from M2; M3 runs them on the poll
   loop).
-- [ ] Confirm how Paperless exposes document update timestamps and whether they
+  - Done: `refresh` in `src/index.ts` re-reads `whitelist.json` and re-lists
+    every Paperless vocabulary on `operations.vocabularyRefreshMs`; the loop
+    also refreshes immediately after creating a whitelist entity. A refresh
+    failure blocks processing with a rate-limited log (`withRateLimit`) and
+    capped backoff instead of crashing. Covered by `tests/runner.test.ts` and
+    `tests/logger.test.ts`.
+- [x] Confirm how Paperless exposes document update timestamps and whether they
   are suitable for identifying stale processing states.
-- [ ] Design and implement stale-processing recovery using confirmed Paperless
+  - Done: read-only probe of the real 3.0.0 instance. `document.modified`
+    updates on every `PATCH`; `GET /api/documents/{id}/history/` records exact
+    state-tag transitions with timestamps but returns a bare array (schema says
+    paginated) and is audit-log dependent. Recorded in `docs/api-notes.md`.
+- [x] Design and implement stale-processing recovery using confirmed Paperless
   timestamp behavior and a documented limitation.
-- [ ] Finalize transient versus permanent error classification.
-- [ ] Ensure each request and document attempt is bounded, while service-level
+  - Done: `src/stale.ts`; live mode only, idempotent, returns documents to
+    `ai-pending` and preserves all non-state tags; dry-run reports
+    would-recover. Threshold default 15 minutes. Limitation (any change resets
+    `modified`) documented in `docs/api-notes.md` and `PLAN.md`. Commit
+    `8ddb243`, tests in `tests/stale.test.ts`.
+- [x] Finalize transient versus permanent error classification.
+  - Done: `classifyStatus` marks 408/425/429/5xx transient and other 4xx
+    permanent; `requestJson` retries only transient up to `request.maxRetries`
+    and throws permanent immediately. `errorCategory` labels every error log.
+    Service-connectivity retries are separate and indefinite with capped
+    backoff.
+- [x] Ensure each request and document attempt is bounded, while service-level
   connectivity retries may continue indefinitely with capped backoff and no
   tight loops.
-- [ ] Add structured stdout logging with document ID, state, timing, model,
+  - Done: per request, a hard whole-operation timeout and bounded retries in
+    `src/http.ts`; per claimed document, `runCycle` transitions to failed (live)
+    after the request retries are exhausted. The loop always sleeps
+    `pollIntervalMs` (min 1s) or a capped backoff, so there is no tight loop.
+- [x] Add structured stdout logging with document ID, state, timing, model,
   prompt version, changed fields, review reasons, errors, and retries.
-- [ ] Run the focused critical test suite and add only tests motivated by real
+  - Done: single-line JSON. `cycle-complete` carries document id, outcome,
+    duration, created/requeued/stale recoveries, proposed fields, review
+    reasons, prompt version, and model; failure logs carry `errorCategory` and
+    retry info. No secrets, OCR, full prompts, or raw payloads are logged.
+- [x] Run the focused critical test suite and add only tests motivated by real
   failure risks found during M1 and M2.
-- [ ] Run the worker locally for an extended trial and document operational
+  - Done: 153 tests / 18 files. New coverage: loop timing, no overlap, capped
+    service backoff, refresh failure blocking, graceful shutdown, stale
+    recovery idempotency and dry-run, and rate-limited logging.
+- [x] Run the worker locally for an extended trial and document operational
   findings.
+  - Done: continuous dry-run trial against the real services with
+    `--document-id 34` (terminal, so document 10 was **not** classified) ran 8
+    cycles over ~72s with 3 periodic refreshes and exited 0 on SIGTERM. A second
+    trial against an unreachable Paperless endpoint stayed alive, logged a
+    transient `refresh-failed` with backoff, performed zero cycles, and exited 0
+    on SIGTERM. See the M3 verification notes below.
+
+### M3 Verification
+
+- [x] `bun run check` (Biome + `tsc --noEmit`), `bun test` (153 tests across 18
+  files), and `bun run build` all pass.
+- [x] Document 10 was not classified. Both real trials used `--document-id 34`,
+  a terminal document, so no pending document was ever selected and no OCR was
+  sent for document 10.
+- [x] Dry-run still performs zero Paperless mutations. Covered by
+  `tests/dryrun.test.ts`, `tests/worker.test.ts`, and the new dry-run case in
+  `tests/stale.test.ts`.
+- Config diff and defaults: added an optional `operations` block that defaults
+  to `pollIntervalMs` 60000, `vocabularyRefreshMs` 900000,
+  `staleProcessingThresholdMs` 900000, and `backoff` `{initialMs: 1000,
+  maxMs: 60000}`. Version 1 configs without the block remain valid.
+- Operational findings from the trials:
+  - Default 60s polling with a 15-minute refresh runs one cycle at a time with a
+    single idle sleep between cycles and stays quiet when nothing is pending.
+  - `withRateLimit` prevents an unreachable upstream from flooding stdout while
+    the worker retries indefinitely.
+  - Graceful shutdown is immediate while sleeping; an in-flight bounded request
+    finishes first, then the loop exits 0.
+  - A malformed `operations` value is a fatal configuration error with an
+    actionable message and no secrets.
 
 ## M4: Packaging And Distribution
 
