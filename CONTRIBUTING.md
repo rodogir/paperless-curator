@@ -39,7 +39,7 @@ Keep the subject imperative and concise; add a body explaining *why* when it is
 not obvious. Commit often, in small logical units.
 
 Never commit secrets (`PAPERLESS_API_TOKEN`, `LLM_API_KEY`), OCR text, review
-artifacts, local `config.json` / `whitelist.json`, or the `data/` directory.
+artifacts, local `config.toml` / `whitelist.json`, or the `data/` directory.
 The `Dockerfile` and `.dockerignore` must never bake those in either.
 
 ## Tests

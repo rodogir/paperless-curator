@@ -43,28 +43,46 @@ document automatically.
 ## Quick start (local)
 
 ```sh
-cp config.example.json config.json
+cp config.example.toml config.toml
 cp whitelist.example.json whitelist.json
 mkdir -p data
 mv whitelist.json data/whitelist.json
 
 export PAPERLESS_API_TOKEN="..."
 export LLM_API_KEY="..."
-# edit config.json: paperless.baseUrl, llm.baseUrl, llm.model
+# edit config.toml: paperless.baseUrl, llm.baseUrl, llm.model
 
 bun run dev                 # continuous polling, dry-run
 bun run dev -- --once       # a single cycle
 bun run dev -- --document-id 34
 ```
 
-`config.json`, `whitelist.json`, and `data/` are git-ignored. Never commit
+`INIT_DATA=1 bun run dev` creates `config.toml` and `data/whitelist.json` with
+safe defaults when they are missing (the container sets `INIT_DATA=1`).
+
+`config.toml`, `whitelist.json`, and `data/` are git-ignored. Never commit
 them.
 
 ## Configuration
 
-Configuration is one versioned JSON file (`config.example.json` is the
-documented example). Invalid configuration is a fatal startup error with an
-actionable message. See `PLAN.md` for the full contract.
+Configuration is one versioned **TOML** file (`config.example.toml` is the
+documented example); TOML was chosen so the file can carry comments. Invalid
+configuration is a fatal startup error with an actionable message. See
+`PLAN.md` for the full contract.
+
+```toml
+# Secrets live in the environment, not here.
+version = 1
+dataDir = "./data"
+dryRun = true
+
+[paperless]
+baseUrl = "https://paperless.example.com"
+
+[llm]
+baseUrl = "https://api.example.com/v1"
+model = "your-model-name"
+```
 
 | Key | Default | Notes |
 | --- | --- | --- |
@@ -89,8 +107,9 @@ Environment variables:
 | --- | --- | --- |
 | `PAPERLESS_API_TOKEN` | yes | Paperless API token |
 | `LLM_API_KEY` | yes | LLM API key |
-| `CONFIG_PATH` | no | Path to config JSON (default `config.json`) |
+| `CONFIG_PATH` | no | Path to config TOML (default `config.toml`) |
 | `DATA_DIR` | no | Overrides `config.dataDir` (default `./data`) |
+| `INIT_DATA` | no | Create missing config and whitelist files with safe defaults |
 
 ### Data directory
 
@@ -174,13 +193,12 @@ Build locally:
 docker build -t paperless-curator:local .
 ```
 
-Run with a mounted data directory:
+Run with a mounted data directory. On first start the container creates
+`/data/config.toml` and `/data/whitelist.json` with safe defaults if they are
+missing (`INIT_DATA=1` is set in the image):
 
 ```sh
 mkdir -p appdata
-cp config.example.json appdata/config.json
-cp whitelist.example.json appdata/whitelist.json
-# edit appdata/config.json
 
 docker run -d \
   --name paperless-curator \
@@ -191,9 +209,11 @@ docker run -d \
   -e PUID=99 \
   -e PGID=100 \
   paperless-curator:local
+
+# then edit appdata/config.toml (base URLs, model) and restart
 ```
 
-- `/data` is the data directory (`CONFIG_PATH=/data/config.json`,
+- `/data` is the data directory (`CONFIG_PATH=/data/config.toml`,
   `DATA_DIR=/data` are set in the image).
 - There is no `-p`; the worker only makes outbound requests.
 - `PUID`/`PGID` default to `99`/`100` (Unraid `nobody`/`users`). Set them to
@@ -208,24 +228,26 @@ versioned tag over `latest`.
 
 ## Unraid
 
-1. Create the appdata directory and copy in the example config and whitelist:
+1. Create the appdata directory:
 
    ```sh
    mkdir -p /mnt/user/appdata/paperless-curator
-   cp config.example.json /mnt/user/appdata/paperless-curator/config.json
-   cp whitelist.example.json /mnt/user/appdata/paperless-curator/whitelist.json
    ```
+
+   The container creates `config.toml` and `whitelist.json` there with safe
+   defaults on first start. To start from the examples instead, copy
+   `config.example.toml` and `whitelist.example.json` from the repository.
 
    No `chown` is needed when the directory is owned by `nobody:users` (99:100),
    which is the default. If it is owned differently, either `chown -R` it to
    match `PUID`/`PGID`, or set `PUID`/`PGID` to the current owner.
 
-2. Edit `config.json`: set `paperless.baseUrl` and `llm.baseUrl`. If Paperless
+2. Edit `config.toml`: set `paperless.baseUrl` and `llm.baseUrl`. If Paperless
    runs on the same Unraid box, use its LAN address (for example
    `http://192.168.1.10:8000`), not `localhost`.
 
 3. Add a container (or import `unraid/paperless-curator.xml`) with:
-   - **Repository:** `ghcr.io/rodogir/paperless-curator:0.1.1` — prefer a
+   - **Repository:** `ghcr.io/rodogir/paperless-curator:0.2.0` — prefer a
      **versioned tag** over `latest` so upgrades are deliberate.
    - **Network:** Bridge, with **no port mappings**.
    - **Path:** `/mnt/user/appdata/paperless-curator` → `/data`.

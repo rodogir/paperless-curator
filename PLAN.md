@@ -105,9 +105,10 @@ the first implementation produces concrete feedback.
 
 ## Configuration Contract
 
-Normal settings live in one versioned JSON file. The metadata whitelist lives in
-a separate human-curated JSON file (see Metadata Whitelist). Secrets remain in
-environment variables.
+Normal settings live in one versioned TOML file. TOML is used so the
+configuration can carry comments. The metadata whitelist lives in a separate
+human-curated JSON file (see Metadata Whitelist). Secrets remain in environment
+variables.
 
 Required environment variables:
 

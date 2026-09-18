@@ -57,9 +57,9 @@ ad-hoc ones and keep dependency versions pinned.
 
 - Secrets live only in environment variables (`PAPERLESS_API_TOKEN`,
   `LLM_API_KEY`). Never print, log, or commit them.
-- `config.json`, `whitelist.json`, and the data directory are git-ignored;
+- `config.toml`, `whitelist.json`, and the data directory are git-ignored;
   never commit local config or whitelist files.
-- The `Dockerfile` and `.dockerignore` must never bake `config.json`,
+- The `Dockerfile` and `.dockerignore` must never bake `config.toml`,
   `whitelist.json`, `data/`, review artifacts, or secrets into the image.
   Configuration, whitelist, and data come from a mounted volume; secrets come
   from environment variables.

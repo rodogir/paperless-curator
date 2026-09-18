@@ -42,6 +42,7 @@ session.
   - Done: `config.example.json` is versioned; `config.json` is the local,
     git-ignored default (`CONFIG_PATH` overrides it). `.gitignore` ignores
     `config.json`, `config.*.local.json`, and `.env*` (except `.env.example`).
+    Migrated to `config.example.toml` / `config.toml` in 0.2.0; see M4.
 - [x] Implement startup configuration parsing and validation.
   - Reject unsupported configuration versions and invalid values.
   - Apply documented defaults.
@@ -542,15 +543,25 @@ This milestone is optional until the local application is useful and stable.
   - Done: `docker image inspect` shows `ExposedPorts=map[]`, `Volumes=/data`,
     `StopSignal=SIGTERM`, and no image user (the entrypoint drops privileges).
     A container run with a mounted `/data`, dummy env secrets, and an
-    unreachable upstream read `/data/config.json` + `/data/whitelist.json`,
+    unreachable upstream read `/data/config.toml` + `/data/whitelist.json`,
     made only outbound requests, and exited 0 on SIGTERM.
 - [x] Add a documented data-directory volume mount so `whitelist.json`,
   `review.json`, `review.md`, and `review-log.jsonl` are reachable from the host
   filesystem (Unraid appdata).
-  - Done: image sets `CONFIG_PATH=/data/config.json` and `DATA_DIR=/data` and
+  - Done: image sets `CONFIG_PATH=/data/config.toml` and `DATA_DIR=/data` and
     declares `VOLUME ["/data"]`; README documents the mount, `PUID`/`PGID`
     ownership (default `99:100`), and an Unraid appdata example plus
     `unraid/paperless-curator.xml`.
+- [x] Use a comment-friendly configuration format (TOML).
+  - Done: `src/config.ts` loads `config.toml` via `Bun.TOML.parse`; the default
+    path is `config.toml`; `config.example.toml` replaces the JSON example, and
+    docs, the Unraid template, and `PLAN.md` are updated. Breaking change,
+    released as `0.2.0`.
+- [x] Create missing config and whitelist files with safe defaults on first start.
+  - Done: with `INIT_DATA` enabled (set in the image), `src/index.ts` writes a
+    commented `config.toml` (dry-run on, placeholder URLs) and an empty
+    `whitelist.json` when they are missing; existing files are never
+    overwritten. Logged as `config-created` / `whitelist-created`.
 - [x] Add a simple `devenv.nix` that supplies Bun, Git, Docker CLI, and canonical
   project tasks without affecting the production image.
   - Done: `devenv.nix` adds `pkgs.git` and `pkgs.docker-client` and `pc-*`
@@ -586,14 +597,20 @@ This milestone is optional until the local application is useful and stable.
 
 ### M4 Verification
 
-- `bun run check` (Biome + `tsc --noEmit`), `bun test` (155 tests across 18
+- `bun run check` (Biome + `tsc --noEmit`), `bun test` (162 tests across 18
   files), and `bun run build` all pass.
 - Local image build: `docker build --build-arg BUN_VERSION=1.3.13 -t
   paperless-curator:m4-test .` succeeded.
 - `docker image inspect` confirms `ExposedPorts=map[]`, `Volumes=/data`,
-  `StopSignal=SIGTERM`, and no `config*.json`, `whitelist*.json`, or review
+  `StopSignal=SIGTERM`, and no `config*`, `whitelist*.json`, or review
   artifacts exist in the image filesystem. The image user is unset; the
   entrypoint drops privileges.
+- TOML and first-run init verified: a commented `config.toml` parses via
+  `Bun.TOML.parse`; a fresh volume logs `config-created` + `whitelist-created`
+  and writes both files owned `99:100`; a second start does not overwrite
+  existing files (md5 unchanged after a manual edit). Containers run with
+  `INIT_DATA` disabled still fail with the actionable
+  "Create it from config.example.toml" error.
 - PUID/PGID verified: `docker run <image> id` reports `uid=99 gid=100(users)`
   by default, honors `-e PUID=1234 -e PGID=1234`, respects an explicit
   `--user 1000:1000`, and rejects a non-numeric `PUID`. A fresh named volume at

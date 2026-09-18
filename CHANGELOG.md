@@ -4,6 +4,30 @@ All notable changes are documented here. This project uses
 [Semantic Versioning](https://semver.org/). Container images are published to
 `ghcr.io/rodogir/paperless-curator`.
 
+## [0.2.0] - 2026-09-18
+
+### Changed
+
+- **Breaking:** configuration is now TOML (`config.toml`) instead of JSON
+  (`config.json`), loaded with Bun's built-in TOML parser. TOML was chosen so
+  the file can carry comments.
+- The container entrypoint forwards arguments to the worker, so
+  `docker run <image> --help` and `--once` work.
+
+### Added
+
+- On first start the container writes a commented `config.toml` (dry-run
+  enabled, placeholder URLs) and an empty `whitelist.json` when they are
+  missing, then keeps running. Existing files are never overwritten. Controlled
+  by `INIT_DATA`, which is set in the image and off elsewhere.
+
+### Upgrade notes
+
+- Rename `config.json` to `config.toml` and convert it to TOML, or delete it and
+  let the container recreate it, then edit the URLs and model. The `CONFIG_PATH`
+  default is now `config.toml`; `config.example.toml` shows the format.
+- Image: `ghcr.io/rodogir/paperless-curator:0.2.0`.
+
 ## [0.1.1] - 2026-09-18
 
 ### Changed
