@@ -641,6 +641,16 @@ This milestone is optional until the local application is useful and stable.
   pulling it confirms no exposed ports, `Volumes=/data`, `uid=99 gid=100`
   (Unraid defaults) and working `PUID`/`PGID` overrides. CI at `3ae4245` passed
   (https://github.com/rodogir/paperless-curator/actions/runs/35352985843).
+- `0.2.0` publish verified: tag `v0.2.0` triggered the `Release` workflow
+  (https://github.com/rodogir/paperless-curator/actions/runs/35358424721),
+  success. Published tags include `0.2.0`, `0.2`, and `latest`. The `0.2.0`
+  digest is
+  `sha256:f3b8874664652853555b5910ddedf4ba2745da5a7637cfa7416a49797260bfae`.
+  Pulling it and running on a fresh volume logged `config-created` and
+  `whitelist-created` and wrote `config.toml`/`whitelist.json` owned `99:100`,
+  with `CONFIG_PATH=/data/config.toml` and `INIT_DATA=1` in the image. CI at
+  `53cb277` passed
+  (https://github.com/rodogir/paperless-curator/actions/runs/35358422107).
 
 ## Deferred Backlog
 
