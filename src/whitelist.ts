@@ -212,6 +212,31 @@ export async function loadWhitelist(
   return parseWhitelist(raw, stateTags);
 }
 
+/**
+ * Starting point written on first start when `INIT_DATA` is enabled and no
+ * whitelist exists. It is intentionally empty: the model can then only suggest
+ * entities for review, never apply them, until a human curates the whitelist.
+ */
+export const DEFAULT_WHITELIST_JSON = `{
+  "version": 1,
+  "tags": [],
+  "correspondents": [],
+  "documentTypes": []
+}
+`;
+
+/**
+ * Writes the default whitelist only when `path` does not exist. Never
+ * overwrites an existing file. Returns true when a file was created.
+ */
+export async function writeDefaultWhitelist(path: string): Promise<boolean> {
+  if (await Bun.file(path).exists()) {
+    return false;
+  }
+  await Bun.write(path, DEFAULT_WHITELIST_JSON);
+  return true;
+}
+
 export type WhitelistResolution =
   | { status: "resolved"; entry: WhitelistEntry }
   | { status: "unknown"; query: string }

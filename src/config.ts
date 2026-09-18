@@ -46,7 +46,7 @@ export type AppConfig = {
   dataDir: string;
 };
 
-export const DEFAULT_CONFIG_PATH = "config.json";
+export const DEFAULT_CONFIG_PATH = "config.toml";
 export const DEFAULT_DATA_DIR = "./data";
 
 /**
@@ -430,22 +430,87 @@ export function reviewLogPath(dataDir: string): string {
   return `${dataDir}/review-log.jsonl`;
 }
 
+/**
+ * Default configuration written on first start when `INIT_DATA` is enabled and
+ * the file is missing. It is hand-authored TOML so it can carry comments; the
+ * values match the documented defaults and keep dry-run enabled.
+ */
+export const DEFAULT_CONFIG_TOML = `# Paperless Curator configuration (version 1).
+# Secrets are NOT stored here. Set PAPERLESS_API_TOKEN and LLM_API_KEY in the
+# environment. See README.md.
+version = 1
+dataDir = "./data"
+dryRun = true
+
+[paperless]
+baseUrl = "https://paperless.example.com"
+
+[llm]
+baseUrl = "https://api.example.com/v1"
+model = "your-model-name"
+
+[stateTags]
+# These five tags must already exist in Paperless and be distinct.
+pending = "ai-pending"
+processing = "ai-processing"
+processed = "ai-processed"
+review = "ai-review"
+failed = "ai-failed"
+
+[overwrite]
+# Only overwrite a non-empty value when the matching flag is true.
+title = false
+correspondent = false
+documentType = false
+
+[limits]
+maxTitleLength = 128
+maxOcrChars = 30000
+
+[request]
+timeoutMs = 30000
+maxRetries = 2
+retryBackoffMs = 1000
+
+[operations]
+pollIntervalMs = 60000
+vocabularyRefreshMs = 900000
+staleProcessingThresholdMs = 900000
+
+[operations.backoff]
+initialMs = 1000
+maxMs = 60000
+`;
+
+/**
+ * Writes the default TOML configuration only when `path` does not exist. Never
+ * overwrites an existing file. Returns true when a file was created.
+ */
+export async function writeDefaultConfig(path: string): Promise<boolean> {
+  if (await Bun.file(path).exists()) {
+    return false;
+  }
+  await Bun.write(path, DEFAULT_CONFIG_TOML);
+  return true;
+}
+
 export async function loadConfig(path: string): Promise<AppConfig> {
   let text: string;
   try {
     text = await Bun.file(path).text();
   } catch (error) {
     throw new Error(
-      `unable to read configuration file at ${path}: ${(error as Error).message}`,
+      `unable to read configuration file at ${path}: ${(error as Error).message}. ` +
+        "Create it from config.example.toml.",
     );
   }
 
   let raw: unknown;
   try {
-    raw = JSON.parse(text) as unknown;
+    raw = Bun.TOML.parse(text) as unknown;
   } catch (error) {
     throw new Error(
-      `configuration file at ${path} is not valid JSON: ${(error as Error).message}`,
+      `configuration file at ${path} is not valid TOML: ${(error as Error).message}`,
     );
   }
 

@@ -13,8 +13,11 @@ devenv.local.nix
 .env.*
 !.env.example
 config.json
+config.toml
 config.local.json
+config.local.toml
 config.*.local.json
+config.*.local.toml
 
 # Human-curated whitelist and worker review artifacts (derived personal data).
 data/

@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_STATE_TAGS } from "../src/config.ts";
 import {
+  DEFAULT_WHITELIST_JSON,
   loadWhitelist,
   parseWhitelist,
   resolveWhitelistName,
   stateTagKeys,
+  writeDefaultWhitelist,
 } from "../src/whitelist.ts";
 
 const valid = {
@@ -203,5 +205,36 @@ describe("loadWhitelist", () => {
         DEFAULT_STATE_TAGS,
       ),
     ).rejects.toThrow(/whitelist\.example\.json/);
+  });
+});
+
+describe("default whitelist", () => {
+  test("parses to an empty, valid whitelist", () => {
+    const whitelist = parseWhitelist(
+      JSON.parse(DEFAULT_WHITELIST_JSON),
+      DEFAULT_STATE_TAGS,
+    );
+    expect(whitelist.tags).toEqual([]);
+    expect(whitelist.correspondents).toEqual([]);
+    expect(whitelist.documentTypes).toEqual([]);
+  });
+
+  test("writeDefaultWhitelist creates only when missing", async () => {
+    const path = `${import.meta.dir}/tmp-default-whitelist.json`;
+    if (await Bun.file(path).exists()) {
+      await Bun.file(path).delete();
+    }
+    try {
+      expect(await writeDefaultWhitelist(path)).toBe(true);
+      const created = await loadWhitelist(path, DEFAULT_STATE_TAGS);
+      expect(created.tags).toEqual([]);
+
+      await Bun.write(path, JSON.stringify(valid));
+      expect(await writeDefaultWhitelist(path)).toBe(false);
+      const kept = await loadWhitelist(path, DEFAULT_STATE_TAGS);
+      expect(kept.tags.length).toBe(2);
+    } finally {
+      await Bun.file(path).delete();
+    }
   });
 });

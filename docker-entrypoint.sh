@@ -3,7 +3,16 @@
 # run the worker. The image starts as root only for this step; the long-lived
 # process is always non-root. /data is chowned only when the target user cannot
 # already write it, so a correctly-owned appdata directory is never touched.
+#
+# Arguments are forwarded to the worker, so `docker run <image> --help` and
+# `docker run <image> --once` work while `docker run <image> sh` still opens a
+# shell. This mirrors the pinned base image's entrypoint heuristic.
 set -eu
+
+first="${1:-}"
+if [ -z "$first" ] || [ "${first#-}" != "$first" ] || ! command -v "$first" >/dev/null 2>&1; then
+  set -- bun /app/dist/index.js "$@"
+fi
 
 PUID="${PUID:-99}"
 PGID="${PGID:-100}"

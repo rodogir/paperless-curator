@@ -1,0 +1,45 @@
+# Paperless Curator configuration (version 1).
+# Secrets are NOT stored here. Set PAPERLESS_API_TOKEN and LLM_API_KEY in the
+# environment. See README.md.
+version = 1
+dataDir = "./data"
+dryRun = true
+
+[paperless]
+baseUrl = "https://paperless.example.com"
+
+[llm]
+baseUrl = "https://api.example.com/v1"
+model = "your-model-name"
+
+[stateTags]
+# These five tags must already exist in Paperless and be distinct.
+pending = "ai-pending"
+processing = "ai-processing"
+processed = "ai-processed"
+review = "ai-review"
+failed = "ai-failed"
+
+[overwrite]
+# Only overwrite a non-empty value when the matching flag is true.
+title = false
+correspondent = false
+documentType = false
+
+[limits]
+maxTitleLength = 128
+maxOcrChars = 30000
+
+[request]
+timeoutMs = 30000
+maxRetries = 2
+retryBackoffMs = 1000
+
+[operations]
+pollIntervalMs = 60000
+vocabularyRefreshMs = 900000
+staleProcessingThresholdMs = 900000
+
+[operations.backoff]
+initialMs = 1000
+maxMs = 60000

@@ -1,14 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_CONFIG_PATH,
+  DEFAULT_CONFIG_TOML,
   DEFAULT_DATA_DIR,
   DEFAULT_LIMITS,
   DEFAULT_OPERATIONS,
   DEFAULT_REQUEST,
   DEFAULT_STATE_TAGS,
+  loadConfig,
   PAPERLESS_TITLE_MAX_LENGTH,
   parseConfig,
+  resolveConfigPath,
   resolveDataDir,
   whitelistPath,
+  writeDefaultConfig,
 } from "../src/config.ts";
 
 const minimal = {
@@ -196,5 +201,77 @@ describe("resolveDataDir", () => {
 
   test("builds the whitelist path", () => {
     expect(whitelistPath("./data")).toBe("./data/whitelist.json");
+  });
+});
+
+describe("default TOML configuration", () => {
+  test("uses config.toml as the default path", () => {
+    expect(DEFAULT_CONFIG_PATH).toBe("config.toml");
+    expect(resolveConfigPath({})).toBe("config.toml");
+    expect(resolveConfigPath({ CONFIG_PATH: "custom.toml" })).toBe(
+      "custom.toml",
+    );
+  });
+
+  test("the embedded default parses to the documented defaults", () => {
+    const config = parseConfig(Bun.TOML.parse(DEFAULT_CONFIG_TOML));
+    expect(config.dryRun).toBe(true);
+    expect(config.stateTags).toEqual(DEFAULT_STATE_TAGS);
+    expect(config.limits).toEqual(DEFAULT_LIMITS);
+    expect(config.request).toEqual(DEFAULT_REQUEST);
+    expect(config.operations).toEqual(DEFAULT_OPERATIONS);
+    expect(config.overwrite).toEqual({
+      title: false,
+      correspondent: false,
+      documentType: false,
+    });
+    expect(config.dataDir).toBe(DEFAULT_DATA_DIR);
+  });
+
+  test("the versioned example parses", async () => {
+    const path = new URL("../config.example.toml", import.meta.url).pathname;
+    const config = await loadConfig(path);
+    expect(config.dryRun).toBe(true);
+    expect(config.paperless.baseUrl).toBe("https://paperless.example.com");
+    expect(config.llm.model).toBe("your-model-name");
+  });
+
+  test("writeDefaultConfig creates only when missing", async () => {
+    const path = `${import.meta.dir}/tmp-default-config.toml`;
+    if (await Bun.file(path).exists()) {
+      await Bun.file(path).delete();
+    }
+    try {
+      expect(await writeDefaultConfig(path)).toBe(true);
+      expect((await loadConfig(path)).dryRun).toBe(true);
+
+      await Bun.write(
+        path,
+        `version = 1
+dataDir = "./keep"
+[paperless]
+baseUrl = "https://keep.example.com"
+[llm]
+baseUrl = "https://api.keep.example.com"
+model = "keep"
+`,
+      );
+      expect(await writeDefaultConfig(path)).toBe(false);
+      const kept = await loadConfig(path);
+      expect(kept.paperless.baseUrl).toBe("https://keep.example.com");
+      expect(kept.dataDir).toBe("./keep");
+    } finally {
+      await Bun.file(path).delete();
+    }
+  });
+
+  test("reports a TOML syntax error with an actionable message", async () => {
+    const path = `${import.meta.dir}/tmp-broken-config.toml`;
+    await Bun.write(path, "version = \n");
+    try {
+      await expect(loadConfig(path)).rejects.toThrow(/not valid TOML/);
+    } finally {
+      await Bun.file(path).delete();
+    }
   });
 });

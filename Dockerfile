@@ -30,8 +30,9 @@ LABEL org.opencontainers.image.title="paperless-curator" \
       org.opencontainers.image.source="https://github.com/rodogir/paperless-curator" \
       org.opencontainers.image.licenses="MIT"
 
-ENV CONFIG_PATH=/data/config.json \
-    DATA_DIR=/data
+ENV CONFIG_PATH=/data/config.toml \
+    DATA_DIR=/data \
+    INIT_DATA=1
 
 COPY --from=build /app/dist ./dist
 COPY package.json ./

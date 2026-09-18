@@ -8,8 +8,11 @@ devenv.local.nix
 .env.*
 !.env.example
 config.json
+config.toml
 config.local.json
+config.local.toml
 config.*.local.json
+config.*.local.toml
 
 # Mounted data directory: human-edited whitelist and worker review artifacts.
 # Contains derived personal metadata; never commit.

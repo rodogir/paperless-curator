@@ -7,6 +7,7 @@ import {
   reviewMarkdownPath,
   reviewStorePath,
   whitelistPath,
+  writeDefaultConfig,
 } from "./config.ts";
 import type { Vocabularies } from "./decision.ts";
 import type { RetryInfo, RetryPolicy } from "./http.ts";
@@ -21,7 +22,7 @@ import {
 } from "./paperless.ts";
 import { fileReviewArtifacts } from "./review.ts";
 import { runWorkerLoop, type WorkerState } from "./runner.ts";
-import { loadWhitelist } from "./whitelist.ts";
+import { loadWhitelist, writeDefaultWhitelist } from "./whitelist.ts";
 import { type CycleResult, runCycle } from "./worker.ts";
 
 type ParsedArgs = {
@@ -67,6 +68,13 @@ function parseDocumentId(value: string | undefined): number {
     throw new Error(`--document-id must be a positive integer, got ${value}`);
   }
   return parsed;
+}
+
+function isTruthy(value: string | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
 function retryPolicy(config: AppConfig): RetryPolicy {
@@ -123,7 +131,7 @@ Usage:
   bun run src/index.ts [--config <path>] [--document-id <id>] [--live] [--once]
 
 Options:
-  --config <path>       path to the JSON configuration file
+  --config <path>       path to the TOML configuration file
   --document-id <id>    process one deliberately selected document
   --live                enable Paperless writes (requires dryRun=false and
                         explicit approval); dry-run is the default
@@ -132,8 +140,10 @@ Options:
 Environment:
   PAPERLESS_API_TOKEN   required, Paperless API token
   LLM_API_KEY           required, OpenAI-compatible API key
-  CONFIG_PATH           optional, path to config JSON (default: config.json)
+  CONFIG_PATH           optional, path to config TOML (default: config.toml)
   DATA_DIR              optional, overrides config.dataDir (default: ./data)
+  INIT_DATA             optional, create a missing config file and whitelist
+                        with safe defaults before starting
 `;
 
 async function main(): Promise<number> {
@@ -145,16 +155,25 @@ async function main(): Promise<number> {
 
   const log = createLogger();
   const configPath = args.configPath ?? resolveConfigPath(process.env);
+  const initData = isTruthy(process.env.INIT_DATA);
 
-  const token = process.env.PAPERLESS_API_TOKEN ?? "";
-  const apiKey = process.env.LLM_API_KEY ?? "";
-  if (token.trim().length === 0) {
-    log("error", "config-error", { message: "PAPERLESS_API_TOKEN is not set" });
-    return 1;
-  }
-  if (apiKey.trim().length === 0) {
-    log("error", "config-error", { message: "LLM_API_KEY is not set" });
-    return 1;
+  // First-run convenience for the container: create a safe default config when
+  // INIT_DATA is enabled and none exists. Existing files are never overwritten.
+  if (initData) {
+    try {
+      if (await writeDefaultConfig(configPath)) {
+        log("warn", "config-created", {
+          configPath,
+          action:
+            "edit paperless.baseUrl, llm.baseUrl, and llm.model, then restart",
+        });
+      }
+    } catch (error) {
+      log("error", "config-error", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return 1;
+    }
   }
 
   let config: AppConfig;
@@ -164,6 +183,37 @@ async function main(): Promise<number> {
     log("error", "config-error", {
       message: error instanceof Error ? error.message : String(error),
     });
+    return 1;
+  }
+
+  const dataDir = resolveDataDir(process.env, config);
+
+  // Create an empty whitelist on first run. It is intentionally empty so the
+  // model can only suggest entities until a human curates it.
+  if (initData) {
+    try {
+      if (await writeDefaultWhitelist(whitelistPath(dataDir))) {
+        log("warn", "whitelist-created", {
+          path: whitelistPath(dataDir),
+          action: "curate whitelist.json before live use; it starts empty",
+        });
+      }
+    } catch (error) {
+      log("error", "whitelist-error", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return 1;
+    }
+  }
+
+  const token = process.env.PAPERLESS_API_TOKEN ?? "";
+  const apiKey = process.env.LLM_API_KEY ?? "";
+  if (token.trim().length === 0) {
+    log("error", "config-error", { message: "PAPERLESS_API_TOKEN is not set" });
+    return 1;
+  }
+  if (apiKey.trim().length === 0) {
+    log("error", "config-error", { message: "LLM_API_KEY is not set" });
     return 1;
   }
 
@@ -202,8 +252,6 @@ async function main(): Promise<number> {
     retry,
     onRetry,
   };
-
-  const dataDir = resolveDataDir(process.env, config);
 
   log("info", "startup", {
     configPath,
