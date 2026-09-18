@@ -533,21 +533,24 @@ This milestone is optional until the local application is useful and stable.
     `src/index.ts` with `bun build`; the runtime stage copies only `dist/` and
     `package.json`.
 - [x] Run the runtime image as a non-root user where practical.
-  - Done: `USER bun` (uid 1000, already present in the pinned base image);
-    `/data` is created and owned by that user.
+  - Done: `docker-entrypoint.sh` starts as root only to drop to `PUID`/`PGID`
+    (defaults `99:100`, Unraid's `nobody`/`users`) and execs the worker as that
+    user; `/data` is owned `99:100` and the entrypoint chowns it only when the
+    target user cannot already write it. An explicit `--user` is respected.
 - [x] Verify the image exposes no ports and needs only configuration, secrets,
   and network access to Paperless and the LLM endpoint.
-  - Done: `docker image inspect` shows `ExposedPorts=map[]`, `User=bun`,
-    `Volumes=/data`, `StopSignal=SIGTERM`. A container run with a mounted
-    `/data`, dummy env secrets, and an unreachable upstream read
-    `/data/config.json` + `/data/whitelist.json`, made only outbound requests,
-    and exited 0 on SIGTERM.
+  - Done: `docker image inspect` shows `ExposedPorts=map[]`, `Volumes=/data`,
+    `StopSignal=SIGTERM`, and no image user (the entrypoint drops privileges).
+    A container run with a mounted `/data`, dummy env secrets, and an
+    unreachable upstream read `/data/config.json` + `/data/whitelist.json`,
+    made only outbound requests, and exited 0 on SIGTERM.
 - [x] Add a documented data-directory volume mount so `whitelist.json`,
   `review.json`, `review.md`, and `review-log.jsonl` are reachable from the host
   filesystem (Unraid appdata).
   - Done: image sets `CONFIG_PATH=/data/config.json` and `DATA_DIR=/data` and
-    declares `VOLUME ["/data"]`; README documents the mount, host ownership
-    (uid 1000), and an Unraid appdata example.
+    declares `VOLUME ["/data"]`; README documents the mount, `PUID`/`PGID`
+    ownership (default `99:100`), and an Unraid appdata example plus
+    `unraid/paperless-curator.xml`.
 - [x] Add a simple `devenv.nix` that supplies Bun, Git, Docker CLI, and canonical
   project tasks without affecting the production image.
   - Done: `devenv.nix` adds `pkgs.git` and `pkgs.docker-client` and `pc-*`
@@ -577,9 +580,9 @@ This milestone is optional until the local application is useful and stable.
   prefer a versioned tag.
   - Done: `latest` is enabled only when the tag contains no `-` (stable), and
     README recommends a versioned tag on Unraid.
-- [-] Add release and upgrade notes when a second release makes them useful.
-  - Deferred: only the initial `0.1.0` release exists. Add changelog/upgrade
-    notes when a second release is cut.
+- [x] Add release and upgrade notes when a second release makes them useful.
+  - Done: `CHANGELOG.md` records `0.1.0` and the `0.1.1` PUID/PGID change with
+    upgrade notes; README links to it.
 
 ### M4 Verification
 
@@ -587,9 +590,15 @@ This milestone is optional until the local application is useful and stable.
   files), and `bun run build` all pass.
 - Local image build: `docker build --build-arg BUN_VERSION=1.3.13 -t
   paperless-curator:m4-test .` succeeded.
-- `docker image inspect` confirms `User=bun`, `ExposedPorts=map[]`,
-  `Volumes=/data`, `StopSignal=SIGTERM`, and no `config*.json`,
-  `whitelist*.json`, or review artifacts exist in the image filesystem.
+- `docker image inspect` confirms `ExposedPorts=map[]`, `Volumes=/data`,
+  `StopSignal=SIGTERM`, and no `config*.json`, `whitelist*.json`, or review
+  artifacts exist in the image filesystem. The image user is unset; the
+  entrypoint drops privileges.
+- PUID/PGID verified: `docker run <image> id` reports `uid=99 gid=100(users)`
+  by default, honors `-e PUID=1234 -e PGID=1234`, respects an explicit
+  `--user 1000:1000`, and rejects a non-numeric `PUID`. A fresh named volume at
+  `/data` is writable by `99:100`, and a host directory not writable by `99:100`
+  is chowned by the entrypoint before the worker starts.
 - Container smoke test: mounted `/tmp/.../pc-data` at `/data`, passed dummy
   `PAPERLESS_API_TOKEN`/`LLM_API_KEY`, pointed the config at an unreachable
   upstream. The worker logged `startup` with `dataDir=/data`, loaded the
@@ -601,11 +610,12 @@ This milestone is optional until the local application is useful and stable.
   `Release` workflow
   (https://github.com/rodogir/paperless-curator/actions/runs/35346960327),
   which completed successfully. Anonymous `ghcr.io` tag listing returns `0.1.0`,
-  `0.1`, and `latest`. The published image digest is
+  `0.1`, and `latest`. The published `0.1.0` image digest is
   `sha256:dd4b283ab888176834f06a1ba060bcabd9ec0a116897f4ac60186810c2206944`;
-  pulling it confirms `User=bun`, no exposed ports, `Volumes=/data`, and a
-  working `--help`. CI on `main` also passed
+  pulling it confirmed no exposed ports, `Volumes=/data`, and a working
+  `--help`. CI on `main` also passed
   (https://github.com/rodogir/paperless-curator/actions/runs/35346906384).
+  The `0.1.1` PUID/PGID release reuses the same workflow.
 
 ## Deferred Backlog
 

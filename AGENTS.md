@@ -76,10 +76,12 @@ ad-hoc ones and keep dependency versions pinned.
 - Validate untrusted API and LLM responses at the boundary.
 - Tests use `bun test` with mocked `fetch`; they must not require live services
   or credentials.
-- Packaging and automation exist from M4 on: keep the image minimal, non-root,
-  free of exposed ports, and free of baked configuration or data. CI stays
-  cheap and independent of live services or credentials; release publishing
-  targets `ghcr.io/rodogir/paperless-curator` and runs only on version tags.
+- Packaging and automation exist from M4 on: keep the image minimal, free of
+  exposed ports, and free of baked configuration or data. The worker must run
+  non-root: the entrypoint may start as root only to drop to `PUID`/`PGID`. CI
+  stays cheap and independent of live services or credentials; release
+  publishing targets `ghcr.io/rodogir/paperless-curator` and runs only on
+  version tags.
 
 ## Workflow
 
