@@ -571,7 +571,8 @@ This milestone is optional until the local application is useful and stable.
   `ghcr.io/rodogir/paperless-curator:<version>`.
   - Done: `.github/workflows/release.yml` runs on `v*` tags and pushes
     `{{version}}` and `{{major}}.{{minor}}` tags for `linux/amd64` using
-    `GITHUB_TOKEN` (`packages: write`). Not exercised here; see M4 Verification.
+    `GITHUB_TOKEN` (`packages: write`). Exercised on the `v0.1.0` tag; see M4
+    Verification.
 - [x] Publish `latest` only for stable releases and document that Unraid should
   prefer a versioned tag.
   - Done: `latest` is enabled only when the tag contains no `-` (stable), and
@@ -596,12 +597,15 @@ This milestone is optional until the local application is useful and stable.
   files were written because nothing was processed.
 - TLS from the image works (`fetch("https://example.com")` returned 200), so
   the pinned Alpine image has usable CA certificates.
-- Not verified locally: an actual GHCR publish run. It requires pushing a `v*`
-  tag and repository Actions settings that allow `packages: write` (and, for the
-  first publish, package visibility may need adjusting). To verify: push a
-  version tag, watch the `Release` workflow, and confirm
-  `ghcr.io/rodogir/paperless-curator:0.1.0` (plus `latest`) exists. No
-  dependency is registered in this environment.
+- GHCR publish verified: pushing the annotated tag `v0.1.0` triggered the
+  `Release` workflow
+  (https://github.com/rodogir/paperless-curator/actions/runs/35346960327),
+  which completed successfully. Anonymous `ghcr.io` tag listing returns `0.1.0`,
+  `0.1`, and `latest`. The published image digest is
+  `sha256:dd4b283ab888176834f06a1ba060bcabd9ec0a116897f4ac60186810c2206944`;
+  pulling it confirms `User=bun`, no exposed ports, `Volumes=/data`, and a
+  working `--help`. CI on `main` also passed
+  (https://github.com/rodogir/paperless-curator/actions/runs/35346906384).
 
 ## Deferred Backlog
 
