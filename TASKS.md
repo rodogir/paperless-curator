@@ -616,6 +616,14 @@ This milestone is optional until the local application is useful and stable.
   `--help`. CI on `main` also passed
   (https://github.com/rodogir/paperless-curator/actions/runs/35346906384).
   The `0.1.1` PUID/PGID release reuses the same workflow.
+- `0.1.1` publish verified: tag `v0.1.1` triggered the `Release` workflow
+  (https://github.com/rodogir/paperless-curator/actions/runs/35352987828),
+  which completed successfully. Published tags are `0.1.0`, `0.1`, `0.1.1`, and
+  `latest`. The `0.1.1` digest is
+  `sha256:8a6c2deabdd73a21a26a9bd76dadf8a0eec8391cdd9cc992e4c0b731c92d1fb1`;
+  pulling it confirms no exposed ports, `Volumes=/data`, `uid=99 gid=100`
+  (Unraid defaults) and working `PUID`/`PGID` overrides. CI at `3ae4245` passed
+  (https://github.com/rodogir/paperless-curator/actions/runs/35352985843).
 
 ## Deferred Backlog
 
