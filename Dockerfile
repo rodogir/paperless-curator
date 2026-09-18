@@ -15,9 +15,13 @@ COPY src ./src
 RUN bun build src/index.ts --target bun --outdir dist --minify
 
 # ---------------------------------------------------------------------------
-# Runtime stage: only the bundle, running as the image's non-root `bun` user.
-# Configuration, the whitelist, and the review artifacts are mounted at /data;
-# secrets arrive only through environment variables. No port is exposed.
+# Runtime stage: only the bundle. Configuration, the whitelist, and the review
+# artifacts are mounted at /data; secrets arrive only through environment
+# variables. No port is exposed.
+#
+# The entrypoint starts as root only to drop privileges to PUID:PGID (Unraid
+# defaults: 99 nobody, 100 users) and then execs the worker; the long-lived
+# process is always non-root.
 # ---------------------------------------------------------------------------
 FROM oven/bun:${BUN_VERSION}-alpine AS runtime
 WORKDIR /app
@@ -29,14 +33,19 @@ LABEL org.opencontainers.image.title="paperless-curator" \
 ENV CONFIG_PATH=/data/config.json \
     DATA_DIR=/data
 
-COPY --from=build --chown=bun:bun /app/dist ./dist
-COPY --chown=bun:bun package.json ./
+COPY --from=build /app/dist ./dist
+COPY package.json ./
+COPY docker-entrypoint.sh /usr/local/bin/paperless-curator-entrypoint.sh
 
-# /data is a mount point for the host data directory (Unraid appdata). Create
-# and own it here so a bare `docker run` with a fresh empty volume works.
-RUN mkdir -p /data && chown bun:bun /data
+# /data is a mount point for the host data directory (Unraid appdata). Own it by
+# the default PUID:PGID so a fresh named volume is writable out of the box.
+RUN apk add --no-cache su-exec \
+ && mkdir -p /data \
+ && chown 99:100 /data \
+ && chmod 0775 /data \
+ && chmod 0755 /usr/local/bin/paperless-curator-entrypoint.sh
 VOLUME ["/data"]
 
-USER bun
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["bun", "/app/dist/index.js"]
+ENTRYPOINT ["/usr/local/bin/paperless-curator-entrypoint.sh"]
+CMD ["bun", "/app/dist/index.js"]
