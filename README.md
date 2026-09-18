@@ -163,8 +163,10 @@ responses.
 ## Docker
 
 The image is a multi-stage build with a pinned Bun version. It contains only
-the bundled worker, runs as a non-root user (`bun`, uid 1000), exposes **no
-ports**, and needs only outbound access to Paperless and the LLM endpoint.
+the bundled worker, exposes **no ports**, and needs only outbound access to
+Paperless and the LLM endpoint. It starts as root only to drop privileges to
+`PUID`/`PGID` (default `99:100`, Unraid's `nobody`/`users`) and then runs the
+worker as that non-root user.
 
 Build locally:
 
@@ -178,8 +180,7 @@ Run with a mounted data directory:
 mkdir -p appdata
 cp config.example.json appdata/config.json
 cp whitelist.example.json appdata/whitelist.json
-# edit appdata/config.json, then make it writable by the container user
-chown -R 1000:1000 appdata
+# edit appdata/config.json
 
 docker run -d \
   --name paperless-curator \
@@ -187,18 +188,23 @@ docker run -d \
   -v "$PWD/appdata":/data \
   -e PAPERLESS_API_TOKEN="..." \
   -e LLM_API_KEY="..." \
+  -e PUID=99 \
+  -e PGID=100 \
   paperless-curator:local
 ```
 
 - `/data` is the data directory (`CONFIG_PATH=/data/config.json`,
   `DATA_DIR=/data` are set in the image).
 - There is no `-p`; the worker only makes outbound requests.
-- The container user must be able to write `/data` (the `chown` above).
+- `PUID`/`PGID` default to `99`/`100` (Unraid `nobody`/`users`). Set them to
+  match the owner of your data directory. The entrypoint chowns `/data` only
+  when the target user cannot already write it, so matching the owner avoids
+  any change.
 - `paperless.baseUrl` must be reachable **from inside the container**. On the
   same host, use the host's LAN IP, not `localhost`.
 
-Published images (once released) are at
-`ghcr.io/rodogir/paperless-curator:<version>`.
+Published images are at `ghcr.io/rodogir/paperless-curator:<version>`; prefer a
+versioned tag over `latest`.
 
 ## Unraid
 
@@ -208,26 +214,31 @@ Published images (once released) are at
    mkdir -p /mnt/user/appdata/paperless-curator
    cp config.example.json /mnt/user/appdata/paperless-curator/config.json
    cp whitelist.example.json /mnt/user/appdata/paperless-curator/whitelist.json
-   chown -R 1000:1000 /mnt/user/appdata/paperless-curator
    ```
+
+   No `chown` is needed when the directory is owned by `nobody:users` (99:100),
+   which is the default. If it is owned differently, either `chown -R` it to
+   match `PUID`/`PGID`, or set `PUID`/`PGID` to the current owner.
 
 2. Edit `config.json`: set `paperless.baseUrl` and `llm.baseUrl`. If Paperless
    runs on the same Unraid box, use its LAN address (for example
    `http://192.168.1.10:8000`), not `localhost`.
 
-3. Add a container with:
-   - **Repository:** `ghcr.io/rodogir/paperless-curator:0.1.0` — prefer a
+3. Add a container (or import `unraid/paperless-curator.xml`) with:
+   - **Repository:** `ghcr.io/rodogir/paperless-curator:0.1.1` — prefer a
      **versioned tag** over `latest` so upgrades are deliberate.
    - **Network:** Bridge, with **no port mappings**.
    - **Path:** `/mnt/user/appdata/paperless-curator` → `/data`.
-   - **Variables:** `PAPERLESS_API_TOKEN`, `LLM_API_KEY`.
+   - **Variables:** `PAPERLESS_API_TOKEN`, `LLM_API_KEY`, and optionally
+     `PUID` (default `99`) and `PGID` (default `100`).
    - **Restart policy:** unless stopped.
 
 4. Watch the container log for `startup` and `cycle-complete` events. Review
    `review.md` in the appdata directory as documents are classified.
 
 To upgrade, pull the new version tag and restart; the data directory is
-preserved. Read the release notes before changing a major or minor version.
+preserved. Read the [changelog](CHANGELOG.md) and its upgrade notes before
+changing a major or minor version.
 
 ## Troubleshooting
 
@@ -239,7 +250,7 @@ preserved. Read the release notes before changing a major or minor version.
 | `refresh-failed` (transient) | Paperless or LLM unreachable | The worker stays up and retries with capped backoff |
 | `cycle-failed` (transient) | A transient upstream error | Retried automatically; check connectivity |
 | `cycle-complete` with `status: review` | A human decision is needed | Read `review.md`; add whitelist entries |
-| `Permission denied` writing review files | Container cannot write the mount | `chown -R 1000:1000` the appdata directory |
+| `Permission denied` writing review files | `PUID`/`PGID` do not match the data directory owner | Set `PUID`/`PGID` to the owner (default `99:100`), or `chown -R` the appdata directory |
 | Nothing happens in dry-run | Expected | Dry-run makes no changes; set `dryRun=false` and pass `--live` |
 
 ## Development

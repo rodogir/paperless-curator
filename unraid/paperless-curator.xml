@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>paperless-curator</Name>
+  <Repository>ghcr.io/rodogir/paperless-curator:0.1.1</Repository>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/rodogir/paperless-curator/issues</Support>
+  <Project>https://github.com/rodogir/paperless-curator</Project>
+  <Overview>Reads OCR text from Paperless-ngx and asks an OpenAI-compatible LLM to suggest document metadata (title, tags, correspondent, document type). Applies only human-curated whitelist values, never removes tags, and never modifies document contents. Dry-run is the default; live writes require dryRun=false in config.json AND the --live flag. Exposes no ports. OCR text is sent to the configured LLM provider.</Overview>
+  <Category>Tools: Productivity:</Category>
+  <WebUI/>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Data Directory" Target="/data" Default="/mnt/user/appdata/paperless-curator" Mode="rw" Description="Holds config.json, whitelist.json, review.json, review.md, and review-log.jsonl. The worker runs as PUID:PGID (defaults 99:100, Unraid nobody:users), which matches the usual appdata ownership; the entrypoint fixes /data ownership if it is not writable." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/paperless-curator</Config>
+  <Config Name="Paperless API Token" Target="PAPERLESS_API_TOKEN" Default="" Mode="" Description="Paperless-ngx API token. Required. Never logged or committed." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="LLM API Key" Target="LLM_API_KEY" Default="" Mode="" Description="API key for the OpenAI-compatible LLM endpoint. Required." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID the worker runs as. Unraid default is 99 (nobody)." Type="Variable" Display="always" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID the worker runs as. Unraid default is 100 (users)." Type="Variable" Display="always" Required="false" Mask="false">100</Config>
+</Container>
